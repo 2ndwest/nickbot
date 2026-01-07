@@ -22,6 +22,8 @@ int main() {
     dpp::cluster bot(token);
 
     bot.on_slashcommand([&bot](const dpp::slashcommand_t& event) {
+        cout << "[~] Command invoked: /" << event.command.get_command_name() << "\n";
+
         if (event.command.get_command_name() == "workrequest") {
             string details = get<string>(event.get_parameter("details"));
             event.reply("Work request submitted with details: " + details);
