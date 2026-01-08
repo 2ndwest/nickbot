@@ -54,6 +54,6 @@ void commands::quickroom(const dpp::slashcommand_t& event) {
     response += "-# Sourced via [QuickRoom](https://classrooms.mit.edu/classrooms/#/quickroom). May not be comprehensive.\n";
 
     if (found == 0) {
-        event.edit_response("No available rooms found on QuickRoom for building **" + building_query + "**.");
+        event.edit_response("No available rooms found on [QuickRoom](https://classrooms.mit.edu/classrooms/#/quickroom) for building **" + building_query + "**.");
     } else event.edit_response(response);
 }
