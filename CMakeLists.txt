@@ -8,8 +8,9 @@ FetchContent_Declare(libtouchstone GIT_REPOSITORY https://github.com/2ndwest/lib
 FetchContent_MakeAvailable(libtouchstone)
 
 find_package(dpp REQUIRED)
+find_package(SQLite3 REQUIRED)
 
-add_executable(bot bot.cc)
+add_executable(bot bot.cc db.cc)
 
-target_link_libraries(bot libtouchstone::libtouchstone dpp::dpp)
+target_link_libraries(bot libtouchstone::libtouchstone dpp::dpp SQLite::SQLite3)
 target_compile_features(bot PRIVATE cxx_std_17)

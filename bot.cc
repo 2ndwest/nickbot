@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <libtouchstone.h>
+#include "db.h"
 
 using namespace std;
 
@@ -11,6 +12,9 @@ const char* password = getenv("TOUCHSTONE_PASSWORD");
 
 libtouchstone::AuthOptions opts = {"cookies.txt", true};
 
+// TODO: get work requests actually working
+// TODO: handle failed touchstone auth gracefully -> DM me with button to rectify
+
 int main() {
     if (!token || !kerb || !password) {
         cerr << "[!] Some required environment variables are not set.\n";
@@ -19,22 +23,37 @@ int main() {
 
     cout << "[~] Starting bot...\n";
 
+    sqlite3* database = db::init();
+    if (!database) {
+        cerr << "[!] Failed to initialize sqlite db.\n";
+        return 1;
+    }
+
     dpp::cluster bot(token);
 
-    bot.on_slashcommand([&bot](const dpp::slashcommand_t& event) {
+    bot.on_slashcommand([&bot, database](const dpp::slashcommand_t& event) {
         cout << "[~] Command invoked: /" << event.command.get_command_name() << "\n";
 
         if (event.command.get_command_name() == "workrequest") {
             string details = get<string>(event.get_parameter("details"));
-            event.reply("Work request submitted with details: " + details);
+            string room_id = to_string(event.command.channel_id);
+            int mit_request_id = 0; // TODO: get mit request id from touchstone
+
+            if (db::insert_work_request(database, room_id, details, mit_request_id)) {
+                event.reply("Work request submitted successfully! Details: " + details);
+            } else event.reply("Failed to submit work request. Please try again later.");
         } else if (event.command.get_command_name() == "quickroom") {
-            event.reply("Fetching available classrooms...");
+            event.reply("Fetching Quickroom data...");
+
+            cout << "[?] Authenticating to Quickroom API...\n";
 
             cpr::Session s = libtouchstone::session(opts.cookie_file);
             cpr::Response r = libtouchstone::authenticate(s, "https://classrooms.mit.edu/classrooms/quickroom", kerb, password, opts);
 
-            if (r.error) event.edit_response("Authentication failed: " + r.error.message);
-            else event.edit_response("Available classrooms: " + r.text);
+            cout << "[?] Quickroom API response (" << r.text.size() << " chars): " << r.text.substr(0, 50) << "...\n";
+
+            if (r.error) event.edit_response("Touchstone auth failed: " + r.error.message);
+            else event.edit_response("Quickroom data: " + r.text.substr(0, 1500) + "...");
         }
     });
 
@@ -78,5 +97,8 @@ int main() {
     });
 
     bot.start(dpp::st_wait);
+
+    cout << "[~] Bot stopped. Exiting...\n";
+    db::close(database);
     return 0;
 }

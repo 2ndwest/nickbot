@@ -4,6 +4,7 @@ cookies.txt
 .cache/
 build/
 .env
+*.db
 
 # Prerequisites
 *.d
