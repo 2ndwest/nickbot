@@ -41,7 +41,7 @@ void commands::quickroom(const dpp::slashcommand_t& event) {
     for (auto& classroom : json["data"]["classrooms"].getArray()) {
         string building_num = classroom["buildingName"].getString();
 
-        if (building_num == building_query) {
+        if (utils::uppercase(building_num) == utils::uppercase(building_query)) {
             found++;
             int capacity = classroom["capacity"].getLong();
             string room_name = classroom["room"].getString();
