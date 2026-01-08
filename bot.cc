@@ -45,8 +45,8 @@ int main() {
                 event.reply("Work request submitted successfully! Details: " + details);
             } else event.reply("Failed to submit work request. Please try again later.");
         } else if (event.command.get_command_name() == "quickroom") {
-            string room_query = get<string>(event.get_parameter("room"));
-            event.reply("Looking up room " + room_query + "...");
+            string building_query = get<string>(event.get_parameter("building"));
+            event.reply("Looking up available rooms in building **" + building_query + "**...");
 
             cout << "[?] Authenticating to Quickroom API...\n";
 
@@ -64,36 +64,32 @@ int main() {
             }
 
             auto [status, json] = jt::Json::parse(r.text);
-            if (status != jt::Json::success || !json.contains("data") || !json["data"].contains("classrooms")) {
-                event.edit_response("Failed to parse JSON.");
+            if (status != jt::Json::success) {
+                event.edit_response("Failed to parse JSON from QuickRoom.");
                 return;
             }
 
+            string response = "**Available rooms in building " + building_query + "**:\n";
+
+            int nfound = 0;
             for (auto& classroom : json["data"]["classrooms"].getArray()) {
-                string room_name = classroom["room"].getString();
+                string building_num = classroom["buildingName"].getString();
 
-                if (utils::uppercase(room_name) == utils::uppercase(room_query)) {
-                    // Found the room!
+                if (building_num == building_query) {
+                    nfound++;
                     int capacity = classroom["capacity"].getLong();
-                    string building = classroom["buildingName"].getString();
-                    string room_num = classroom["roomNumber"].getString();
-
-                    string response = "**" + room_name + "** (capacity: " + to_string(capacity) + ")\n";
-                    response += "Building " + building + ", Room " + room_num + "\n\n";
-                    response += "**Availability:**\n";
-
-                    for (auto& avail : classroom["availabilities"].getArray()) {
-                        string begin = utils::parse_time(avail["begin"].getString());
-                        string end = utils::parse_time(avail["end"].getString());
-                        response += "• " + begin + " → " + end + "\n";
-                    }
-
-                    event.edit_response(response);
-                    return;
+                    string room_name = classroom["room"].getString();
+                    string begin = utils::parse_time(classroom["availabilities"].getArray()[0]["begin"].getString());
+                    string end = utils::parse_time(classroom["availabilities"].getArray()[0]["end"].getString());
+                    response += "├ **" + room_name + "** (capacity: " + to_string(capacity) + ") — " + begin + " → " + end + "\n";
                 }
             }
 
-            event.edit_response("Room **" + room_query + "** not listed on Quickroom.");
+            response += "-# Sourced via QuickRoom. May not be comprehensive.\n";
+
+            if (nfound == 0) {
+                event.edit_response("No available rooms found on QuickRoom for building **" + building_query + "**.");
+            } else event.edit_response(response);
         }
     });
 
@@ -118,8 +114,19 @@ int main() {
             bot.global_command_create(workrequest_cmd);
 
             // Quick room command.
-            dpp::slashcommand quickroom_cmd("quickroom", "Look up a specific classroom's availability.", bot.me.id);
-            quickroom_cmd.add_option(dpp::command_option(dpp::co_string, "room", "Room to look up (e.g. 1-132, 34-302)", true));
+            dpp::slashcommand quickroom_cmd(
+                "quickroom",
+                "List currently available rooms in a building.",
+                bot.me.id
+            );
+            quickroom_cmd.add_option(
+                dpp::command_option(
+                    dpp::co_string,
+                    "building",
+                    "Building number (e.g. 1, 34, 66).",
+                    true
+                )
+            );
             bot.global_command_create(quickroom_cmd);
 
             // List available commands.
