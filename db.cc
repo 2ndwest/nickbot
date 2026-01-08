@@ -63,9 +63,4 @@ namespace db {
         cout << "[*] sqlite: created work request #" << sqlite3_last_insert_rowid(database) << " for room " << room_id << "\n";
         return true;
     }
-
-    void close(sqlite3* database) {
-        sqlite3_close(database);
-        cout << "[~] sqlite: db closed.\n";
-    }
 }

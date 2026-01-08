@@ -162,9 +162,6 @@ int main() {
         }
     });
 
-    bot.start(dpp::st_wait);
-
-    cout << "[~] Bot stopped. Exiting...\n";
-    db::close(database);
+    bot.start(dpp::st_wait); // never returns, even on sigterm
     return 0;
 }
