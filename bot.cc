@@ -1,6 +1,6 @@
 #include <dpp/dpp.h>
 #include <iostream>
-#include "commands.h"
+#include "commands/commands.h"
 #include "config.h"
 #include "db.h"
 #include "utils.h"
