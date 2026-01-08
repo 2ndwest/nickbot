@@ -108,9 +108,27 @@ int main() {
         if (dpp::run_once<struct register_bot_commands>()) {
             cout << "[!] Connected to Discord.\n";
 
+            // Set presence to show last restarted time.
+            bot.set_presence(dpp::presence(
+                dpp::presence_status::ps_dnd,
+                dpp::activity_type::at_custom,
+                "last restarted: " + utils::current_time()
+            ));
+
             // Work request command.
-            dpp::slashcommand workrequest_cmd("workrequest", "File a work request for the room corresponding to this channel.", bot.me.id);
-            workrequest_cmd.add_option(dpp::command_option(dpp::co_string, "details", "A detailed description of the requested services.", true));
+            dpp::slashcommand workrequest_cmd(
+                "workrequest",
+                "File a work request for the room corresponding to this channel.",
+                bot.me.id
+            );
+            workrequest_cmd.add_option(
+                dpp::command_option(
+                    dpp::co_string,
+                    "details",
+                    "A detailed description of the requested services.",
+                    true
+                )
+            );
             bot.global_command_create(workrequest_cmd);
 
             // Quick room command.
