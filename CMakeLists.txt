@@ -11,7 +11,7 @@ FetchContent_MakeAvailable(libtouchstone json_cpp)
 find_package(dpp REQUIRED)
 find_package(SQLite3 REQUIRED)
 
-add_executable(bot bot.cc db.cc)
+add_executable(bot bot.cc db.cc commands.cc)
 
 target_link_libraries(bot libtouchstone::libtouchstone dpp::dpp SQLite::SQLite3 json)
 target_include_directories(bot PRIVATE ${json_cpp_SOURCE_DIR})

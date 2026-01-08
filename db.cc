@@ -19,7 +19,7 @@ namespace db {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 room_id TEXT NOT NULL,
                 details TEXT NOT NULL,
-                mit_request_id INTEGER,
+                donlan_id INTEGER,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
         )", nullptr, nullptr, &err_msg);
@@ -34,11 +34,11 @@ namespace db {
         return database;
     }
 
-    bool insert_work_request(sqlite3 *database, const string &room_id, const string &details, int mit_request_id) {
+    bool insert_work_request(sqlite3 *database, const string &room_id, const string &details, int donlan_id) {
         sqlite3_stmt* stmt;
         int rc = sqlite3_prepare_v2(
             database,
-            "INSERT INTO work_requests (room_id, details, mit_request_id) VALUES (?, ?, ?);",
+            "INSERT INTO work_requests (room_id, details, donlan_id) VALUES (?, ?, ?);",
             -1,
             &stmt,
             nullptr
@@ -50,7 +50,7 @@ namespace db {
 
         sqlite3_bind_text(stmt, 1, room_id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, details.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int(stmt, 3, mit_request_id);
+        sqlite3_bind_int(stmt, 3, donlan_id);
 
         rc = sqlite3_step(stmt);
         sqlite3_finalize(stmt);
