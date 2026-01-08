@@ -85,7 +85,7 @@ int main() {
                 }
             }
 
-            response += "-# Sourced via QuickRoom. May not be comprehensive.\n";
+            response += "-# Sourced via [QuickRoom](https://classrooms.mit.edu/classrooms/#/quickroom). May not be comprehensive.\n";
 
             if (nfound == 0) {
                 event.edit_response("No available rooms found on QuickRoom for building **" + building_query + "**.");
