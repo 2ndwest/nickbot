@@ -2,7 +2,9 @@
 #include <cstdlib>
 #include <iostream>
 #include <libtouchstone.h>
+#include <json.h>
 #include "db.h"
+#include "utils.h"
 
 using namespace std;
 
@@ -43,17 +45,55 @@ int main() {
                 event.reply("Work request submitted successfully! Details: " + details);
             } else event.reply("Failed to submit work request. Please try again later.");
         } else if (event.command.get_command_name() == "quickroom") {
-            event.reply("Fetching Quickroom data...");
+            string room_query = get<string>(event.get_parameter("room"));
+            event.reply("Looking up room " + room_query + "...");
 
             cout << "[?] Authenticating to Quickroom API...\n";
 
             cpr::Session s = libtouchstone::session(opts.cookie_file);
-            cpr::Response r = libtouchstone::authenticate(s, "https://classrooms.mit.edu/classrooms/quickroom", kerb, password, opts);
+            cpr::Response r = libtouchstone::authenticate(s,
+                "https://classrooms.mit.edu/classrooms/quickroom",
+                kerb, password, opts
+            );
 
             cout << "[?] Quickroom API response (" << r.text.size() << " chars): " << r.text.substr(0, 50) << "...\n";
 
-            if (r.error) event.edit_response("Touchstone auth failed: " + r.error.message);
-            else event.edit_response("Quickroom data: " + r.text.substr(0, 1500) + "...");
+            if (r.error) {
+                event.edit_response("Touchstone auth failed: " + r.error.message);
+                return;
+            }
+
+            auto [status, json] = jt::Json::parse(r.text);
+            if (status != jt::Json::success || !json.contains("data") || !json["data"].contains("classrooms")) {
+                event.edit_response("Failed to parse JSON.");
+                return;
+            }
+
+            for (auto& classroom : json["data"]["classrooms"].getArray()) {
+                string room_name = classroom["room"].getString();
+
+                if (utils::uppercase(room_name) == utils::uppercase(room_query)) {
+                    // Found the room!
+                    int capacity = classroom["capacity"].getLong();
+                    string building = classroom["buildingName"].getString();
+                    string room_num = classroom["roomNumber"].getString();
+
+                    string response = "**" + room_name + "** (capacity: " + to_string(capacity) + ")\n";
+                    response += "Building " + building + ", Room " + room_num + "\n\n";
+                    response += "**Availability:**\n";
+
+                    for (auto& avail : classroom["availabilities"].getArray()) {
+                        string begin = utils::parse_time(avail["begin"].getString());
+                        string end = utils::parse_time(avail["end"].getString());
+                        response += "• " + begin + " → " + end + "\n";
+                    }
+
+                    event.edit_response(response);
+                    return;
+                }
+            }
+
+            event.edit_response("Room **" + room_query + "** not listed on Quickroom.");
         }
     });
 
@@ -78,7 +118,8 @@ int main() {
             bot.global_command_create(workrequest_cmd);
 
             // Quick room command.
-            dpp::slashcommand quickroom_cmd("quickroom", "View classrooms available on campus right now.", bot.me.id);
+            dpp::slashcommand quickroom_cmd("quickroom", "Look up a specific classroom's availability.", bot.me.id);
+            quickroom_cmd.add_option(dpp::command_option(dpp::co_string, "room", "Room to look up (e.g. 1-132, 34-302)", true));
             bot.global_command_create(quickroom_cmd);
 
             // List available commands.

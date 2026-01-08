@@ -5,12 +5,14 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(FetchContent)
 FetchContent_Declare(libtouchstone GIT_REPOSITORY https://github.com/2ndwest/libtouchstone.git GIT_TAG main)
-FetchContent_MakeAvailable(libtouchstone)
+FetchContent_Declare(json_cpp GIT_REPOSITORY https://github.com/jart/json.cpp GIT_TAG main)
+FetchContent_MakeAvailable(libtouchstone json_cpp)
 
 find_package(dpp REQUIRED)
 find_package(SQLite3 REQUIRED)
 
 add_executable(bot bot.cc db.cc)
 
-target_link_libraries(bot libtouchstone::libtouchstone dpp::dpp SQLite::SQLite3)
+target_link_libraries(bot libtouchstone::libtouchstone dpp::dpp SQLite::SQLite3 json)
+target_include_directories(bot PRIVATE ${json_cpp_SOURCE_DIR})
 target_compile_features(bot PRIVATE cxx_std_17)
