@@ -22,12 +22,12 @@ void commands::quickroom(const dpp::slashcommand_t& event) {
         libtouchstone_opts
     );
 
-    cout << "[?] Quickroom API response (" << r.text.size() << " chars): " << r.text.substr(0, 50) << "...\n";
-
     if (r.error) {
         event.edit_response("Touchstone auth failed: " + r.error.message);
         return;
     }
+
+    cout << "[?] Quickroom API response (" << r.text.size() << " chars): " << r.text.substr(0, 50) << "...\n";
 
     auto [status, json] = jt::Json::parse(r.text);
     if (status != jt::Json::success) {
