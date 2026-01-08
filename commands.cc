@@ -8,7 +8,7 @@
 
 using namespace std;
 
-static libtouchstone::AuthOptions opts = {"cookies.txt", true};
+static libtouchstone::AuthOptions libtouchstone_opts = {"cookies.txt", true};
 
 void commands::workrequest(const dpp::slashcommand_t& event, sqlite3* database) {
     string details = get<string>(event.get_parameter("details"));
@@ -28,10 +28,11 @@ void commands::quickroom(const dpp::slashcommand_t& event) {
 
     cout << "[?] Authenticating to Quickroom API...\n";
 
-    cpr::Session s = libtouchstone::session(opts.cookie_file);
+    cpr::Session s = libtouchstone::session(libtouchstone_opts.cookie_file);
     cpr::Response r = libtouchstone::authenticate(s,
         "https://classrooms.mit.edu/classrooms/quickroom",
-        config::kerb(), config::kerb_password(), opts
+        config::kerb(), config::kerb_password(),
+        libtouchstone_opts
     );
 
     cout << "[?] Quickroom API response (" << r.text.size() << " chars): " << r.text.substr(0, 50) << "...\n";
