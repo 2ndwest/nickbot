@@ -18,7 +18,6 @@ sqlite3* db::init() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             room_id TEXT NOT NULL,
             details TEXT NOT NULL,
-            donlan_id INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
     )", nullptr, nullptr, &err_msg);
@@ -33,11 +32,11 @@ sqlite3* db::init() {
     return database;
 }
 
-bool db::insert_work_request(sqlite3* database, const string& room_id, const string& details, int donlan_id) {
+bool db::insert_work_request(sqlite3* database, const string& room_id, const string& details) {
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(
         database,
-        "INSERT INTO work_requests (room_id, details, donlan_id) VALUES (?, ?, ?);",
+        "INSERT INTO work_requests (room_id, details) VALUES (?, ?);",
         -1,
         &stmt,
         nullptr
@@ -49,7 +48,6 @@ bool db::insert_work_request(sqlite3* database, const string& room_id, const str
 
     sqlite3_bind_text(stmt, 1, room_id.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, details.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 3, donlan_id);
 
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
