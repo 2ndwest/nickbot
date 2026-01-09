@@ -17,35 +17,16 @@ void commands::quickroom(const dpp::slashcommand_t& event, dpp::cluster& bot) {
     cpr::Response r = libtouchstone::authenticate(s,
         "https://classrooms.mit.edu/classrooms/quickroom",
         config::kerb(), config::kerb_password(),
+        // block = false is critical, we don't want to be stuck waiting for a 2FA prompt.
         {config::cookiefile(), true, false}
     );
 
-    if (r.error) {
-        event.edit_response("Touchstone authentication failed. <@" + string(config::admin_user_id()) + "> has been notified to reauthenticate.");
-
-        // DM admin with reauth button
-        dpp::message dm("Touchstone auth failed with error: " + r.error.message +   ". Please reauthenticate to Touchstone.");
-        dm.add_component(
-            dpp::component().add_component(
-                dpp::component()
-                    .set_type(dpp::cot_button)
-                    .set_label("Re-authenticate to Touchstone")
-                    .set_style(dpp::cos_success)
-                    .set_id("touchstone_reauth")
-            )
-        );
-        bot.direct_message_create(dpp::snowflake(config::admin_user_id()), dm);
-        cout << "[!] Touchstone auth failed, notified admin to reauthenticate.\n";
-        return;
-    }
+    if (r.error) return handle_touchstone_auth_failure(event, bot, r.error.message);
 
     cout << "[?] Quickroom API response (" << r.text.size() << " chars): " << r.text.substr(0, 50) << "...\n";
 
     auto [status, json] = jt::Json::parse(r.text);
-    if (status != jt::Json::success) {
-        event.edit_response("Failed to parse JSON from QuickRoom.");
-        return;
-    }
+    if (status != jt::Json::success) return event.edit_response("Failed to parse JSON from QuickRoom.");
 
     string response = "**Available rooms in building " + building_query + "**:\n";
 
