@@ -14,7 +14,7 @@ sqlite3* db::init() {
 
     char* err_msg = nullptr;
     rc = sqlite3_exec(database, R"(
-        CREATE TABLE IF NOT EXISTS work_requests (
+        CREATE TABLE IF NOT EXISTS pending_work_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             room_id TEXT NOT NULL,
             details TEXT NOT NULL,
@@ -32,11 +32,11 @@ sqlite3* db::init() {
     return database;
 }
 
-bool db::insert_work_request(sqlite3* database, const string& room_id, const string& details) {
+bool db::insert_pending_work_request(sqlite3* database, const string& room_id, const string& details) {
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(
         database,
-        "INSERT INTO work_requests (room_id, details) VALUES (?, ?);",
+        "INSERT INTO pending_work_requests (room_id, details) VALUES (?, ?);",
         -1,
         &stmt,
         nullptr
@@ -53,10 +53,10 @@ bool db::insert_work_request(sqlite3* database, const string& room_id, const str
     sqlite3_finalize(stmt);
 
     if (rc != SQLITE_DONE) {
-        cerr << "[!] sqlite: failed to insert work request: " << sqlite3_errmsg(database) << "\n";
+        cerr << "[!] sqlite: failed to insert pending work request: " << sqlite3_errmsg(database) << "\n";
         return false;
     }
 
-    cout << "[*] sqlite: created work request #" << sqlite3_last_insert_rowid(database) << " for room " << room_id << "\n";
+    cout << "[*] sqlite: created pending work request #" << sqlite3_last_insert_rowid(database) << " for room " << room_id << "\n";
     return true;
 }
