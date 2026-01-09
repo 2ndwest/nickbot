@@ -6,6 +6,6 @@
 namespace commands {
 
 void workrequest(const dpp::slashcommand_t& event, sqlite3* database);
-void quickroom(const dpp::slashcommand_t& event);
+void quickroom(const dpp::slashcommand_t& event, dpp::cluster& bot);
 
 }

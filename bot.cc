@@ -1,5 +1,6 @@
 #include <dpp/dpp.h>
 #include <iostream>
+#include <libtouchstone.h>
 #include "commands/commands.h"
 #include "config.h"
 #include "db.h"
@@ -7,11 +8,12 @@
 
 using namespace std;
 
-// TODO: get work requests actually working
-// TODO: handle failed touchstone auth gracefully -> DM me with button to rectify
-
 int main() {
-    if (!config::token() || !config::kerb() || !config::kerb_password()) {
+    if (!config::token() ||
+        !config::kerb() ||
+        !config::kerb_password() ||
+        !config::admin_user_id() ||
+        !config::cookiefile()) {
         cerr << "[!] Some required environment variables are not set.\n";
         return 1;
     }
@@ -32,17 +34,29 @@ int main() {
         if (event.command.get_command_name() == "workrequest") {
             commands::workrequest(event, database);
         } else if (event.command.get_command_name() == "quickroom") {
-            commands::quickroom(event);
+            commands::quickroom(event, bot);
         }
     });
 
-    bot.on_message_create([&bot](const dpp::message_create_t& event) {
-        if (event.msg.mentions.size() > 0) {
-            for (auto& mention : event.msg.mentions) {
-                if (mention.first.id == bot.me.id) {
-                    event.reply("I'm busy, go away.");
-                    break;
-                }
+    bot.on_button_click([](const dpp::button_click_t& event) {
+        if (event.custom_id == "touchstone_reauth") {
+            cout << "[~] Reauth button clicked, authenticating to Atlas...\n";
+            event.reply("Sending a 2FA prompt to your device...");
+
+            cpr::Session s = libtouchstone::session(config::cookiefile());
+            cpr::Response r = libtouchstone::authenticate(s,
+                "https://atlas.mit.edu",
+                config::kerb(), config::kerb_password(),
+                // block = true is critical, otherwise we can't do the 2FA prompt.
+                {config::cookiefile(), true, true}
+            );
+
+            if (r.error) {
+                cout << "[!] Touchstone reauth failed: " << r.error.message << "\n";
+                event.edit_response("Reauth failed: " + r.error.message);
+            } else {
+                cout << "[!] Touchstone reauth succeeded.\n";
+                event.edit_response("Successfully re-authenticated to Touchstone! Cookies refreshed.");
             }
         }
     });
