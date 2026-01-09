@@ -17,9 +17,17 @@ inline void handle_touchstone_auth_failure(
     dpp::cluster& bot,
     const std::string& error_message
 ) {
-    event.edit_response("Touchstone authentication failed. <@" + std::string(config::admin_user_id()) + "> has been notified to reauthenticate.");
+    event.edit_response("**Touchstone authentication failed.** <@" + std::string(config::admin_user_id()) + "> has been notified to reauthenticate. Try again later.");
 
-    dpp::message dm("Touchstone auth failed with error: " + error_message + ". Please reauthenticate to Touchstone.");
+    dpp::message dm(
+        "**Touchstone authentication failed:**\n"
+        "├ Message: `" + error_message + "`\n"
+        "├ Triggered by: <@" + std::to_string(event.command.usr.id) + "> "
+        "([jump to message](https://discord.com/channels/" +
+        std::to_string(event.command.guild_id) + "/" +
+        std::to_string(event.command.channel_id) + "/" +
+        std::to_string(event.command.id) + "))"
+    );
     dm.add_component(
         dpp::component().add_component(
             dpp::component()
