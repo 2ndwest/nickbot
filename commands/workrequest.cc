@@ -56,7 +56,6 @@ cpr::Response send_mit_work_request(
 ) {
     std::cout << "[~] Starting repair request submission for room " << room_number << "\n";
 
-    // Step 1: Navigate to CreateRequest.action to establish session
     std::cout << "[~] Step 1: Initializing request session\n";
     session.SetUrl(cpr::Url{"https://adminappsts.mit.edu/facilities/CreateRequest.action"});
     cpr::Response r = session.Get();
@@ -66,8 +65,7 @@ cpr::Response send_mit_work_request(
         return r;
     }
 
-    // Step 3: Submit location details
-    std::cout << "[~] Step 3: Submitting location details\n";
+    std::cout << "[~] Step 2: Submitting location details\n";
     session.SetHeader(cpr::Header{{"Content-Type", "application/x-www-form-urlencoded"}});
     session.SetUrl(cpr::Url{"https://adminappsts.mit.edu/facilities/SelectRepairDetails.action"});
     session.SetPayload(cpr::Payload{
@@ -88,8 +86,7 @@ cpr::Response send_mit_work_request(
         return r;
     }
 
-    // Step 4: Submit the final repair request
-    std::cout << "[~] Step 4: Submitting repair request\n";
+    std::cout << "[~] Step 3: Submitting repair request\n";
     session.SetUrl(cpr::Url{"https://adminappsts.mit.edu/facilities/CreateRepairRequest.action"});
     session.SetHeader(cpr::Header{{"Content-Type", "application/x-www-form-urlencoded"}});
     session.SetPayload(cpr::Payload{
