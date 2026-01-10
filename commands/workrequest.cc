@@ -49,9 +49,9 @@ const std::string PUTZ_PHONE = "(617)+253-2871"; // via https://officesdirectory
 cpr::Response send_mit_work_request(
     cpr::Session& session,
     const std::string& room_number,
-    const std::string& additional_location_info = "",
     const std::string& subject_line = "",
     const std::string& description = "",
+    const std::string& additional_location_info = "",
     const std::string& special_instructions = ""
 ) {
     std::cout << "[~] Starting repair request submission for room " << room_number << "\n";
@@ -135,9 +135,22 @@ void commands::workrequest(const dpp::slashcommand_t& event, sqlite3* database) 
     );
 
     if (r.error) {
-        std::cerr << "[!] Failed to authenticate to CreateRequest.action: " << r.error.message << "\n";
-        return;
+        std::cerr << "[!] Failed to authenticate to CreateRequest: " << r.error.message << "\n";
+        return event.edit_response("**Failed to authenticate to Touchstone.** Please try again later.");
     }
+
+    r = send_mit_work_request(
+        session,
+        room_number,
+        details.substr(0, 40),
+        details
+    );
+    if (r.error) {
+        std::cerr << "[!] Failed to submit work request: " << r.error.message << "\n";
+        return event.edit_response("**Failed to submit work request.** Please try again later.");
+    }
+
+    event.reply("Work request submitted successfully! **Submitted details:** " + details);
 
     // if (db::insert_pending_work_request(database, room_number, details)) {
     //     event.reply("Work request submitted successfully! Details: " + details);
