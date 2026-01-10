@@ -139,8 +139,8 @@ void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, 
         details.substr(0, 40),
         details
     );
-    if (r.error) {
-        std::cerr << "[!] Failed to submit work request: " << r.error.message << "\n";
+    if (r.error || r.status_code != 200) {
+        std::cerr << "[!] Failed to submit work request: " << r.error.message << " (status code: " << r.status_code << ")\n";
         return event.edit_response("**Failed to submit work request.** Please try again later.");
     }
 
