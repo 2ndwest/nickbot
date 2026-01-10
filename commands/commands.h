@@ -8,7 +8,7 @@
 
 namespace commands {
 
-void workrequest(const dpp::slashcommand_t& event, sqlite3* database);
+void workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, sqlite3* database);
 void quickroom(const dpp::slashcommand_t& event, dpp::cluster& bot);
 
 // Handles Touchstone authentication failures by notifying the user and DMing the admin.

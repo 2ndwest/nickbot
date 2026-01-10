@@ -114,7 +114,7 @@ cpr::Response send_mit_work_request(
     return r;
 }
 
-void commands::workrequest(const dpp::slashcommand_t& event, sqlite3* database) {
+void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, sqlite3* database) {
     string details = get<string>(event.get_parameter("details"));
 
     auto it = channel_to_room.find(event.command.channel_id);
@@ -131,10 +131,7 @@ void commands::workrequest(const dpp::slashcommand_t& event, sqlite3* database) 
         config::kerb_password()
     );
 
-    if (r.error) {
-        std::cerr << "[!] Failed to authenticate to CreateRequest: " << r.error.message << "\n";
-        return event.edit_response("**Failed to authenticate to Touchstone.** Please try again later.");
-    }
+    if (r.error) return handle_touchstone_auth_failure(event, bot, r.error.message);
 
     r = send_mit_work_request(
         session,
@@ -147,7 +144,7 @@ void commands::workrequest(const dpp::slashcommand_t& event, sqlite3* database) 
         return event.edit_response("**Failed to submit work request.** Please try again later.");
     }
 
-    event.reply("Work request submitted successfully! **Submitted details:** " + details);
+    event.edit_response("Work request submitted successfully! **Submitted details:** " + details);
 
     // if (db::insert_pending_work_request(database, room_number, details)) {
     //     event.reply("Work request submitted successfully! Details: " + details);

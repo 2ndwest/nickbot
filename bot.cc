@@ -32,7 +32,7 @@ int main() {
         cout << "[~] Command invoked: /" << event.command.get_command_name() << "\n";
 
         if (event.command.get_command_name() == "workrequest") {
-            commands::workrequest(event, database);
+            commands::workrequest(event, bot, database);
         } else if (event.command.get_command_name() == "quickroom") {
             commands::quickroom(event, bot);
         }
