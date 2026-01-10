@@ -1,5 +1,8 @@
 #include "commands.h"
 #include "db.h"
+#include <libtouchstone.h>
+#include <iostream>
+#include "config.h"
 
 using namespace std;
 
@@ -40,13 +43,105 @@ const std::map<dpp::snowflake, std::string> channel_to_room = {
     {1407406325285257408, "253"},
 };
 
+const std::string PUTZ_EMAIL = "2ndwest@mit.edu";
+const std::string PUTZ_PHONE = "(617)+253-2871"; // via https://officesdirectory.mit.edu/east-campus
+
+cpr::Response send_mit_work_request(
+    cpr::Session& session,
+    const std::string& room_number,
+    const std::string& additional_location_info = "",
+    const std::string& subject_line = "",
+    const std::string& description = "",
+    const std::string& special_instructions = ""
+) {
+    std::cout << "[~] Starting repair request submission for room " << room_number << "\n";
+
+    // Step 1: Navigate to CreateRequest.action to establish session
+    std::cout << "[~] Step 1: Initializing request session\n";
+    session.SetUrl(cpr::Url{"https://adminappsts.mit.edu/facilities/CreateRequest.action"});
+    cpr::Response r = session.Get();
+
+    if (r.status_code != 200) {
+        std::cerr << "[!] CreateRequest failed.";
+        return r;
+    }
+
+    // Step 3: Submit location details
+    std::cout << "[~] Step 3: Submitting location details\n";
+    session.SetHeader(cpr::Header{{"Content-Type", "application/x-www-form-urlencoded"}});
+    session.SetUrl(cpr::Url{"https://adminappsts.mit.edu/facilities/SelectRepairDetails.action"});
+    session.SetPayload(cpr::Payload{
+        {"facilities.request.locationType", "PM_RESIDENCE"},
+        {"facilities.request.buildingLeased", "false"},
+        {"facilities.request.residenceName", "62"},
+        {"facilities.request.residenceRoomNumber", room_number},
+        {"facilities.request.residenceLeased", "false"},
+        {"facilities.request.parkingType", "PM_PARKING_LOT"},
+        {"facilities.request.parkingDescr", ""},
+        {"facilities.request.greenspaceDescr", ""},
+        {"facilities.request.locationInfo", additional_location_info}
+    });
+    r = session.Post();
+
+    if (r.status_code != 200) {
+        std::cerr << "[!] SelectRepairDetails failed.";
+        return r;
+    }
+
+    // Step 4: Submit the final repair request
+    std::cout << "[~] Step 4: Submitting repair request\n";
+    session.SetUrl(cpr::Url{"https://adminappsts.mit.edu/facilities/CreateRepairRequest.action"});
+    session.SetHeader(cpr::Header{{"Content-Type", "application/x-www-form-urlencoded"}});
+    session.SetPayload(cpr::Payload{
+        // This is the option for the very generic "Repair" category. There are others,
+        // see: https://gist.github.com/transmissions11/ae1a8f24e675b34c728ab0258391bcdb
+        {"facilities.request.requestCategory", "request_category"},
+        {"facilities.request.fumeHood", ""},
+        {"facilities.request.subjectLine", subject_line},
+        {"facilities.request.description", description},
+        {"facilities.request.specialInstructions", special_instructions},
+        {"facilities.request.creatorLocation", "62-2"}, // Building 62, 2nd floor.
+        {"facilities.request.creatorPhone", PUTZ_PHONE},
+        {"facilities.request.creatorEmail", PUTZ_EMAIL},
+        {"facilities.request.ccEmail", ""},
+        {"facilities.request.requestorName", ""},
+        {"facilities.request.requestorKerbId", ""},
+        {"facilities.request.requestorLocation", ""},
+        {"facilities.request.requestorPhone", ""},
+        {"facilities.request.requestorEmail", ""}
+    });
+    r = session.Post();
+
+    if (r.status_code != 200) std::cerr << "[!] CreateRepairRequest failed.";
+
+    return r;
+}
+
 void commands::workrequest(const dpp::slashcommand_t& event, sqlite3* database) {
     string details = get<string>(event.get_parameter("details"));
-    string room_id = to_string(event.command.channel_id);
 
-    if (db::insert_pending_work_request(database, room_id, details)) {
-        event.reply("Work request submitted successfully! Details: " + details);
-    } else {
-        event.reply("Failed to submit work request. Please try again later.");
+    auto it = channel_to_room.find(event.command.channel_id);
+    if (it == channel_to_room.end()) return event.reply("**This channel is not associated with a room.** Please use this command in a room channel.");
+    string room_number = it->second;
+
+    event.reply("Submitting work request for room **" + room_number + "**...");
+
+    cpr::Session session = libtouchstone::session(config::cookiefile());
+    cpr::Response r = libtouchstone::authenticate(
+        session,
+        "https://adminappsts.mit.edu/facilities/CreateRequest.action",
+        config::kerb(),
+        config::kerb_password()
+    );
+
+    if (r.error) {
+        std::cerr << "[!] Failed to authenticate to CreateRequest.action: " << r.error.message << "\n";
+        return;
     }
+
+    // if (db::insert_pending_work_request(database, room_number, details)) {
+    //     event.reply("Work request submitted successfully! Details: " + details);
+    // } else {
+    //     event.reply("Failed to submit work request. Please try again later.");
+    // }
 }
