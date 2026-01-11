@@ -17,7 +17,7 @@ void commands::quickroom(const dpp::slashcommand_t& event, dpp::cluster& bot) {
     cpr::Response r = libtouchstone::authenticate(s,
         "https://classrooms.mit.edu/classrooms/quickroom",
         config::kerb(), config::kerb_password(),
-        // block = false is critical, we don't want to be stuck waiting for a 2FA prompt.
+        // block = false is critical, we don't want to be stuck waiting for a 2FA prompt
         {config::cookiefile(), true, false}
     );
 

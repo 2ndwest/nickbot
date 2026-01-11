@@ -84,9 +84,9 @@ std::vector<db::PendingWorkRequest> db::get_pending_work_requests(sqlite3* datab
         const char* additional_info = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
         requests.push_back({
             {
-                room ? room : "<UNKNOWN ROOM>",
-                short_desc ? short_desc : "<UNKNOWN SHORT_DESCRIPTION>",
-                additional_info ? additional_info : "",
+                room ? room : "<UNKNOWN ROOM NUMBER>",
+                short_desc ? short_desc : "<UNKNOWN SHORT DESCRIPTION>",
+                additional_info ? additional_info : "<UNKNOWN ADDITIONAL INFORMATION>",
             },
             sqlite3_column_int(stmt, 0),
         });

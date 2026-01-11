@@ -50,7 +50,7 @@ const std::map<dpp::snowflake, std::string> channel_to_room = {
     {1407406325285257408, "253"},
 };
 
-const int MAX_SHORT_DESCRIPTION_LENGTH = 40; // via the Atlas UI, not sure if this is a hard limit or not.
+const int MAX_SHORT_DESCRIPTION_LENGTH = 40; // via the Atlas UI, not sure if this is a hard limit or not
 
 void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, sqlite3* database) {
     string short_description = get<string>(event.get_parameter("short_description"));
@@ -72,7 +72,7 @@ void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, 
         "https://adminappsts.mit.edu/facilities/CreateRequest.action",
         config::kerb(),
         config::kerb_password(),
-        // block = false is critical, we don't want to be stuck waiting for a 2FA prompt.
+        // block = false is critical, we don't want to be stuck waiting for a 2FA prompt
         {config::cookiefile(), true, false}
     );
 
@@ -88,7 +88,7 @@ void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, 
         } else std::cout << "[*] Work request submitted successfully to Atlas for room " << room_number << " with short description: " << short_description << "\n";
     } else {
         // dm admin to reauthenticate. alert_user=false so we don't scare
-        // the user. we'll store their request in sqlite and replay it later.
+        // the user. we'll store their request in sqlite and replay it later
         handle_touchstone_auth_failure(event, bot, r.error.message, false);
 
         if (!db::insert_pending_work_request(database, work_request)) {
@@ -101,7 +101,7 @@ void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, 
         string(!r.error ? "**Work request submitted:**\n" : "**Work request recorded:**\n") +
         "├ **Location:** 62-" + room_number + "\n"
         "├ **Short Description:** " + short_description + "\n" +
-        "├ **Additional Information:** " + (additional_information.empty() ? "N/A" : additional_information) + "\n" +
+        "├ **Additional Information:** " + (additional_information.empty() ? "None" : additional_information) + "\n" +
         (!r.error
             ? "-# Submitted directly via [Atlas](https://adminappsts.mit.edu/facilities/CreateRequest.action).\n"
             : "-# Saved and will be uploaded to [Atlas](https://adminappsts.mit.edu/facilities/CreateRequest.action) shortly.\n")

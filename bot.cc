@@ -47,7 +47,7 @@ int main() {
             cpr::Response r = libtouchstone::authenticate(s,
                 "https://atlas.mit.edu",
                 config::kerb(), config::kerb_password(),
-                // block = true is critical, otherwise we can't do the 2FA prompt.
+                // block = true is critical, otherwise we can't do the 2FA prompt
                 {config::cookiefile(), true, true}
             );
 
@@ -75,14 +75,14 @@ int main() {
         if (dpp::run_once<struct register_bot_commands>()) {
             cout << "[!] Connected to Discord.\n";
 
-            // Set presence to show last restarted time.
+            // set presence to show last restarted time
             bot.set_presence(dpp::presence(
                 dpp::presence_status::ps_dnd,
                 dpp::activity_type::at_custom,
                 "last restarted: " + utils::current_time()
             ));
 
-            // Work request command.
+            // workrequest command
             dpp::slashcommand workrequest_cmd(
                 "workrequest",
                 "File a work request for the room corresponding to this channel.",
@@ -106,7 +106,7 @@ int main() {
             );
             bot.global_command_create(workrequest_cmd);
 
-            // Quick room command.
+            // quickroom command
             dpp::slashcommand quickroom_cmd(
                 "quickroom",
                 "List currently available rooms in a building.",
@@ -122,7 +122,7 @@ int main() {
             );
             bot.global_command_create(quickroom_cmd);
 
-            // List available commands.
+            // list available commands
             bot.global_commands_get([](const dpp::confirmation_callback_t& callback) {
                 if (callback.is_error()) {
                     cerr << "[!] Error getting commands: " << callback.get_error().message << "\n";
