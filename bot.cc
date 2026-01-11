@@ -57,15 +57,17 @@ int main() {
                 return;
             }
 
-            cout << "[*] Touchstone reauth succeeded.\n";
+            cout << "[*] Touchstone reauth succeeded. Handling any unfinished business...\n";
 
             // submit any pending work requests that were stalled due to touchstone auth previously
-            int submitted = commands::submit_pending_work_requests_to_atlas(database, s);
+            auto [submitted_reqs, initial_pending_reqs] = commands::submit_pending_work_requests_to_atlas(database, s);
 
             event.edit_response(
                 "Successfully re-authenticated to Touchstone!" +
-                (submitted > 0
-                    ? "\n-# Submitted " + to_string(submitted) + " pending work request(s) to [Atlas](https://adminappsts.mit.edu/facilities/CreateRequest.action)."
+                (initial_pending_reqs > 0
+                    ? "\n├ Submitted **" + to_string(submitted_reqs) + "/" +
+                      to_string(initial_pending_reqs) +
+                      "** pending work requests to [Atlas](https://adminappsts.mit.edu/facilities/CreateRequest.action)."
                     : "")
             );
         }

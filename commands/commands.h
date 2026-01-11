@@ -13,9 +13,9 @@ namespace commands {
 void workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, sqlite3* database);
 void quickroom(const dpp::slashcommand_t& event, dpp::cluster& bot);
 
-// Submits all pending work requests stored in the database.
-// Returns the number of successfully submitted requests.
-int submit_pending_work_requests_to_atlas(sqlite3* database, cpr::Session& session);
+// Submits all pending work requests stored in the database. Deletes pending requests from db on success.
+// Returns a pair of (number of successfully submitted requests, initial number of pending requests).
+std::pair<int, int> submit_pending_work_requests_to_atlas(sqlite3* database, cpr::Session& session);
 
 // Handles Touchstone authentication failures DMing the admin to reauthenticate,
 // and (optionally) notifying the user that Touchstone authentication failed.

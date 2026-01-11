@@ -147,11 +147,11 @@ cpr::Response submit_work_request_to_atlas(
     return r;
 }
 
-int commands::submit_pending_work_requests_to_atlas(sqlite3* database, cpr::Session& session) {
+std::pair<int, int> commands::submit_pending_work_requests_to_atlas(sqlite3* database, cpr::Session& session) {
     auto pending = db::get_pending_work_requests(database);
     if (pending.empty()) {
         cout << "[*] No pending work requests to submit.\n";
-        return 0;
+        return {0, 0};
     }
 
     cout << "[~] Submitting " << pending.size() << " pending work request(s)...\n";
@@ -173,5 +173,5 @@ int commands::submit_pending_work_requests_to_atlas(sqlite3* database, cpr::Sess
     }
 
     cout << "[*] Submitted " << submitted << "/" << pending.size() << " pending work requests.\n";
-    return submitted;
+    return {submitted, static_cast<int>(pending.size())};
 }
