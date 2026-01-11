@@ -53,6 +53,10 @@ const std::map<dpp::snowflake, std::string> channel_to_room = {
 const int MAX_SHORT_DESCRIPTION_LENGTH = 40; // via the Atlas UI, not sure if this is a hard limit or not
 
 void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, sqlite3* database) {
+    auto it = channel_to_room.find(event.command.channel_id);
+    if (it == channel_to_room.end()) return event.reply("**This channel is not associated with a room.** Please use this command in a room channel.");
+    string room_number = it->second;
+
     string short_description = get<string>(event.get_parameter("short_description"));
 
     auto additional_information_raw = event.get_parameter("additional_information");
@@ -60,9 +64,16 @@ void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, 
         ? get<string>(additional_information_raw)
         : "";
 
-    auto it = channel_to_room.find(event.command.channel_id);
-    if (it == channel_to_room.end()) return event.reply("**This channel is not associated with a room.** Please use this command in a room channel.");
-    string room_number = it->second;
+    if (short_description.length() > MAX_SHORT_DESCRIPTION_LENGTH) {
+        event.reply(
+            dpp::message(
+                "**Short description is too long** (" +
+                to_string(short_description.length()) + " characters). Limit: " +
+                to_string(MAX_SHORT_DESCRIPTION_LENGTH) + " characters. Please try again."
+            ).set_flags(dpp::m_ephemeral)
+        );
+        return;
+    }
 
     event.reply("Submitting work request for room **" + room_number + "**...");
 
