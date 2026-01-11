@@ -25,6 +25,7 @@ void commands::quickroom(const dpp::slashcommand_t& event, dpp::cluster& bot) {
 
     auto [status, json] = jt::Json::parse(r.text);
     if (status != jt::Json::success) return event.edit_response("Failed to parse JSON from QuickRoom.");
+    if (json.contains("error")) return event.edit_response("**QuickRoom request failed.** It may be outside operating hours, try again later.");
 
     std::string response = "**Available rooms in building " + building_query + "**:\n";
 

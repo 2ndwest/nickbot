@@ -81,7 +81,7 @@ cpr::Response submit_work_request_to_atlas(
     cpr::Session& session,
     const db::AtlasWorkRequest& request
 ) {
-    std::cout << "[~] Starting repair request submission for room " << request.room_number << "\n";
+    std::cout << "[~] Starting repair request submission for room " << request.room_number << "...\n";
 
     std::cout << "[~] Step 1: Initializing request session\n";
     session.SetUrl(cpr::Url{"https://adminappsts.mit.edu/facilities/CreateRequest.action"});
