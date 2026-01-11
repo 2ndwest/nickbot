@@ -156,7 +156,6 @@ std::pair<int, int> commands::submit_pending_work_requests_to_atlas(sqlite3* dat
         std::cout << "[~] Submitting work request id=" << req.sqlite_id << " for room " << req.request.room_number << "\n";
 
         cpr::Response r = submit_work_request_to_atlas(session, req.request);
-
         if (r.error || r.status_code != 200) {
             std::cerr << "[!] Failed to submit work request id=" << req.sqlite_id << ": " << r.error.message << " (status code: " << r.status_code << ")\n";
             continue;
