@@ -8,7 +8,7 @@ sqlite3* db::init() {
     int rc = sqlite3_open("workrequests.db", &database);
 
     if (rc) {
-        cerr << "[!] Can't open database: " << sqlite3_errmsg(database) << "\n";
+        cerr << "[!] sqlite: couldn't open database: " << sqlite3_errmsg(database) << "\n";
         return nullptr;
     }
 
@@ -58,5 +58,59 @@ bool db::insert_pending_work_request(sqlite3* database, const string& room_numbe
     }
 
     cout << "[*] sqlite: created pending work request #" << sqlite3_last_insert_rowid(database) << " for room " << room_number << "\n";
+    return true;
+}
+
+std::vector<std::tuple<int, std::string, std::string>> db::get_pending_work_requests(sqlite3* database) {
+    std::vector<std::tuple<int, std::string, std::string>> requests;
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(
+        database,
+        "SELECT id, room_number, details FROM pending_work_requests ORDER BY created_at ASC;",
+        -1,
+        &stmt,
+        nullptr
+    );
+    if (rc != SQLITE_OK) {
+        cerr << "[!] sqlite: failed to prepare select statement: " << sqlite3_errmsg(database) << "\n";
+        return requests;
+    }
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        int id = sqlite3_column_int(stmt, 0);
+        const char* room = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        const char* details = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        requests.emplace_back(id, room ? room : "", details ? details : "");
+    }
+
+    sqlite3_finalize(stmt);
+    cout << "[*] sqlite: retrieved " << requests.size() << " pending work request(s).\n";
+    return requests;
+}
+
+bool db::delete_pending_work_request(sqlite3* database, int id) {
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(
+        database,
+        "DELETE FROM pending_work_requests WHERE id = ?;",
+        -1,
+        &stmt,
+        nullptr
+    );
+    if (rc != SQLITE_OK) {
+        cerr << "[!] sqlite: failed to prepare delete statement: " << sqlite3_errmsg(database) << "\n";
+        return false;
+    }
+
+    sqlite3_bind_int(stmt, 1, id);
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        cerr << "[!] sqlite: failed to delete pending work request #" << id << ": " << sqlite3_errmsg(database) << "\n";
+        return false;
+    }
+
+    cout << "[*] sqlite: deleted pending work request #" << id << "\n";
     return true;
 }

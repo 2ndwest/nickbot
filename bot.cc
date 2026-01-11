@@ -38,7 +38,7 @@ int main() {
         }
     });
 
-    bot.on_button_click([](const dpp::button_click_t& event) {
+    bot.on_button_click([database](const dpp::button_click_t& event) {
         if (event.custom_id == "touchstone_reauth") {
             cout << "[~] Reauth button clicked, authenticating to Atlas...\n";
             event.reply("Sending a 2FA prompt to your device...");
@@ -54,10 +54,20 @@ int main() {
             if (r.error) {
                 cout << "[!] Touchstone reauth failed: " << r.error.message << "\n";
                 event.edit_response("Reauth failed: " + r.error.message);
-            } else {
-                cout << "[!] Touchstone reauth succeeded.\n";
-                event.edit_response("Successfully re-authenticated to Touchstone! Cookies refreshed.");
+                return;
             }
+
+            cout << "[*] Touchstone reauth succeeded.\n";
+
+            // submit any pending work requests stalled due to touchstone auth before
+            int submitted = commands::submit_pending_work_requests(database, s);
+
+            event.edit_response(
+                "Successfully re-authenticated to Touchstone!" +
+                (submitted > 0
+                    ? "\n-# Submitted " + to_string(submitted) + " pending work request(s) to [Atlas](https://adminappsts.mit.edu/facilities/CreateRequest.action)."
+                    : "")
+            );
         }
     });
 

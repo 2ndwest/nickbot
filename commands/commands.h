@@ -1,6 +1,7 @@
 #pragma once
 
 #include <dpp/dpp.h>
+#include <cpr/cpr.h>
 #include <sqlite3.h>
 #include <iostream>
 #include <string>
@@ -11,7 +12,12 @@ namespace commands {
 void workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, sqlite3* database);
 void quickroom(const dpp::slashcommand_t& event, dpp::cluster& bot);
 
-// Handles Touchstone authentication failures by (optionally) notifying the user and DMing the admin.
+// Submits all pending work requests stored in the database.
+// Returns the number of successfully submitted requests.
+int submit_pending_work_requests(sqlite3* database, cpr::Session& session);
+
+// Handles Touchstone authentication failures DMing the admin to reauthenticate,
+// and (optionally) notifying the user that Touchstone authentication failed.
 inline void handle_touchstone_auth_failure(
     const dpp::slashcommand_t& event,
     dpp::cluster& bot,

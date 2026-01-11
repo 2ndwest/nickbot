@@ -166,3 +166,37 @@ void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, 
             : "-# Saved and will be uploaded to [Atlas](https://adminappsts.mit.edu/facilities/CreateRequest.action) shortly.\n")
     );
 }
+
+int commands::submit_pending_work_requests(sqlite3* database, cpr::Session& session) {
+    auto pending = db::get_pending_work_requests(database);
+    if (pending.empty()) {
+        cout << "[*] No pending work requests to submit.\n";
+        return 0;
+    }
+
+    cout << "[~] Submitting " << pending.size() << " pending work request(s)...\n";
+
+    int resubmitted = 0;
+    for (const auto& [id, room_number, details] : pending) {
+        cout << "[~] Resubmitting work request #" << id << " for room " << room_number << "\n";
+
+        cpr::Response r = send_mit_work_request(
+            session,
+            room_number,
+            details.substr(0, 40),
+            details
+        );
+
+        if (r.error || r.status_code != 200) {
+            cerr << "[!] Failed to resubmit work request #" << id << ": " << r.error.message << " (status code: " << r.status_code << ")\n";
+            continue;
+        }
+
+        cout << "[*] Successfully submitted work request #" << id << " for room " << room_number << "\n";
+        db::delete_pending_work_request(database, id);
+        resubmitted++;
+    }
+
+    cout << "[*] Submitted " << resubmitted << "/" << pending.size() << " pending work request(s).\n";
+    return resubmitted;
+}
