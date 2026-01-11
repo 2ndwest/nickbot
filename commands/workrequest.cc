@@ -92,7 +92,7 @@ cpr::Response send_mit_work_request(
     session.SetPayload(cpr::Payload{
         // This is the option for the very generic "Repair" category. There are others,
         // see: https://gist.github.com/transmissions11/ae1a8f24e675b34c728ab0258391bcdb
-        {"facilities.request.requestCategory", "request_category"},
+        {"facilities.request.requestCategory", "H640;HOUS001"},
         {"facilities.request.fumeHood", ""},
         {"facilities.request.subjectLine", subject_line},
         {"facilities.request.description", description},
@@ -144,6 +144,7 @@ void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, 
         return event.edit_response("**Failed to submit work request.** Please try again later.");
     }
 
+    cout << "[*] Work request submitted successfully for room " << room_number << " with details: " << details << "\n";
     event.edit_response("Work request submitted successfully! **Submitted details:** " + details);
 
     // if (db::insert_pending_work_request(database, room_number, details)) {
