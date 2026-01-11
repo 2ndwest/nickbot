@@ -77,7 +77,7 @@ int main() {
 
             // set presence to show last restarted time
             bot.set_presence(dpp::presence(
-                dpp::presence_status::ps_dnd,
+                dpp::presence_status::ps_online,
                 dpp::activity_type::at_custom,
                 "last restarted: " + utils::current_time()
             ));
