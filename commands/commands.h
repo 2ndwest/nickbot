@@ -11,13 +11,14 @@ namespace commands {
 void workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, sqlite3* database);
 void quickroom(const dpp::slashcommand_t& event, dpp::cluster& bot);
 
-// Handles Touchstone authentication failures by notifying the user and DMing the admin.
+// Handles Touchstone authentication failures by (optionally) notifying the user and DMing the admin.
 inline void handle_touchstone_auth_failure(
     const dpp::slashcommand_t& event,
     dpp::cluster& bot,
-    const std::string& error_message
+    const std::string& error_message,
+    bool alert_user = true // Whether to notify the user authentication failed.
 ) {
-    event.edit_response("**Touchstone authentication failed.** <@" + std::string(config::admin_user_id()) + "> has been notified to reauthenticate. Try again later.");
+    if (alert_user) event.edit_response("**Touchstone authentication failed.** <@" + std::string(config::admin_user_id()) + "> has been notified to reauthenticate. Try again later.");
 
     dpp::message dm(
         "**Touchstone authentication failed:**\n"

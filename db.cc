@@ -16,7 +16,7 @@ sqlite3* db::init() {
     rc = sqlite3_exec(database, R"(
         CREATE TABLE IF NOT EXISTS pending_work_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            room_id TEXT NOT NULL,
+            room_number TEXT NOT NULL,
             details TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
@@ -32,11 +32,11 @@ sqlite3* db::init() {
     return database;
 }
 
-bool db::insert_pending_work_request(sqlite3* database, const string& room_id, const string& details) {
+bool db::insert_pending_work_request(sqlite3* database, const string& room_number, const string& details) {
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(
         database,
-        "INSERT INTO pending_work_requests (room_id, details) VALUES (?, ?);",
+        "INSERT INTO pending_work_requests (room_number, details) VALUES (?, ?);",
         -1,
         &stmt,
         nullptr
@@ -46,7 +46,7 @@ bool db::insert_pending_work_request(sqlite3* database, const string& room_id, c
         return false;
     }
 
-    sqlite3_bind_text(stmt, 1, room_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, room_number.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, details.c_str(), -1, SQLITE_TRANSIENT);
 
     rc = sqlite3_step(stmt);
@@ -57,6 +57,6 @@ bool db::insert_pending_work_request(sqlite3* database, const string& room_id, c
         return false;
     }
 
-    cout << "[*] sqlite: created pending work request #" << sqlite3_last_insert_rowid(database) << " for room " << room_id << "\n";
+    cout << "[*] sqlite: created pending work request #" << sqlite3_last_insert_rowid(database) << " for room " << room_number << "\n";
     return true;
 }

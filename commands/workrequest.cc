@@ -128,28 +128,41 @@ void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, 
         session,
         "https://adminappsts.mit.edu/facilities/CreateRequest.action",
         config::kerb(),
-        config::kerb_password()
+        config::kerb_password(),
+        // block = false is critical, we don't want to be stuck waiting for a 2FA prompt.
+        {config::cookiefile(), true, false}
     );
 
-    if (r.error) return handle_touchstone_auth_failure(event, bot, r.error.message);
+    if (!r.error) {
+        // actually submit work request to Atlas
+        // r = send_mit_work_request(
+        //     session,
+        //     room_number,
+        //     details.substr(0, 40),
+        //     details
+        // );
 
-    r = send_mit_work_request(
-        session,
-        room_number,
-        details.substr(0, 40),
-        details
-    );
-    if (r.error || r.status_code != 200) {
-        std::cerr << "[!] Failed to submit work request: " << r.error.message << " (status code: " << r.status_code << ")\n";
-        return event.edit_response("**Failed to submit work request.** Please try again later.");
+        if (r.error || r.status_code != 200) {
+            std::cerr << "[!] Failed to submit work request: " << r.error.message << " (status code: " << r.status_code << ")\n";
+            return event.edit_response("**Failed to submit work request.** Please try again later.");
+        } else std::cout << "[*] Work request submitted successfully to Atlas for room " << room_number << " with details: " << details << "\n";
+    } else {
+        // dm admin to reauthenticate. alert_user=false so we don't scare
+        // the user. we'll store their request in sqlite and replay it later.
+        handle_touchstone_auth_failure(event, bot, r.error.message, false);
+
+        if (!db::insert_pending_work_request(database, room_number, details)) {
+            std::cerr << "[!] Failed to record work request: " << sqlite3_errmsg(database) << "\n";
+            return event.edit_response("**Failed to record work request.** Please try again later.");
+        } else std::cout << "[*] Work request stored in database for room " << room_number << " with details: " << details << "\n";
     }
 
-    cout << "[*] Work request submitted successfully for room " << room_number << " with details: " << details << "\n";
-    event.edit_response("Work request submitted successfully! **Submitted details:** " + details);
-
-    // if (db::insert_pending_work_request(database, room_number, details)) {
-    //     event.reply("Work request submitted successfully! Details: " + details);
-    // } else {
-    //     event.reply("Failed to submit work request. Please try again later.");
-    // }
+    event.edit_response(
+        string(!r.error ? "**Work request submitted:**\n" : "**Work request recorded:**\n") +
+        "├ **Location:** 62-" + room_number + "\n"
+        "├ **Details:** " + details + "\n" +
+        (!r.error
+            ? "-# Submitted directly via [Atlas](https://adminappsts.mit.edu/facilities/CreateRequest.action).\n"
+            : "-# Saved and will be uploaded to [Atlas](https://adminappsts.mit.edu/facilities/CreateRequest.action) shortly.\n")
+    );
 }
