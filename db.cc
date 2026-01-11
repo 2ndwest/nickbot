@@ -32,7 +32,7 @@ sqlite3* db::init() {
     return database;
 }
 
-bool db::insert_pending_work_request(sqlite3* database, const string& room_number, const string& details) {
+bool db::insert_pending_work_request(sqlite3* database, const PendingWorkRequest& request) {
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(
         database,
@@ -46,8 +46,8 @@ bool db::insert_pending_work_request(sqlite3* database, const string& room_numbe
         return false;
     }
 
-    sqlite3_bind_text(stmt, 1, room_number.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, details.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, request.room_number.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, request.details.c_str(), -1, SQLITE_TRANSIENT);
 
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -57,12 +57,12 @@ bool db::insert_pending_work_request(sqlite3* database, const string& room_numbe
         return false;
     }
 
-    cout << "[*] sqlite: created pending work request #" << sqlite3_last_insert_rowid(database) << " for room " << room_number << "\n";
+    cout << "[*] sqlite: created pending work request id=" << sqlite3_last_insert_rowid(database) << " for room " << request.room_number << "\n";
     return true;
 }
 
-std::vector<std::tuple<int, std::string, std::string>> db::get_pending_work_requests(sqlite3* database) {
-    std::vector<std::tuple<int, std::string, std::string>> requests;
+std::vector<db::PendingWorkRequest> db::get_pending_work_requests(sqlite3* database) {
+    std::vector<PendingWorkRequest> requests;
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(
         database,
@@ -77,10 +77,13 @@ std::vector<std::tuple<int, std::string, std::string>> db::get_pending_work_requ
     }
 
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-        int id = sqlite3_column_int(stmt, 0);
         const char* room = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         const char* details = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-        requests.emplace_back(id, room ? room : "", details ? details : "");
+        requests.push_back({
+            room ? room : "<UNKNOWN ROOM>",
+            details ? details : "<UNKNOWN DETAILS>",
+            sqlite3_column_int(stmt, 0),
+        });
     }
 
     sqlite3_finalize(stmt);
@@ -107,10 +110,10 @@ bool db::delete_pending_work_request(sqlite3* database, int id) {
     sqlite3_finalize(stmt);
 
     if (rc != SQLITE_DONE) {
-        cerr << "[!] sqlite: failed to delete pending work request #" << id << ": " << sqlite3_errmsg(database) << "\n";
+        cerr << "[!] sqlite: failed to delete pending work request id=" << id << ": " << sqlite3_errmsg(database) << "\n";
         return false;
     }
 
-    cout << "[*] sqlite: deleted pending work request #" << id << "\n";
+    cout << "[*] sqlite: deleted pending work request id=" << id << "\n";
     return true;
 }

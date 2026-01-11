@@ -151,7 +151,7 @@ void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, 
         // the user. we'll store their request in sqlite and replay it later.
         handle_touchstone_auth_failure(event, bot, r.error.message, false);
 
-        if (!db::insert_pending_work_request(database, room_number, details)) {
+        if (!db::insert_pending_work_request(database, {room_number, details})) {
             std::cerr << "[!] Failed to record work request: " << sqlite3_errmsg(database) << "\n";
             return event.edit_response("**Failed to record work request.** Please try again later.");
         } else std::cout << "[*] Work request stored in database for room " << room_number << " with details: " << details << "\n";
@@ -177,23 +177,23 @@ int commands::submit_pending_work_requests(sqlite3* database, cpr::Session& sess
     cout << "[~] Submitting " << pending.size() << " pending work request(s)...\n";
 
     int resubmitted = 0;
-    for (const auto& [id, room_number, details] : pending) {
-        cout << "[~] Resubmitting work request #" << id << " for room " << room_number << "\n";
+    for (const auto& req : pending) {
+        cout << "[~] Resubmitting work request id=" << req.sqlite_id << " for room " << req.room_number << "\n";
 
         cpr::Response r = send_mit_work_request(
             session,
-            room_number,
-            details.substr(0, 40),
-            details
+            req.room_number,
+            req.details.substr(0, 40),
+            req.details
         );
 
         if (r.error || r.status_code != 200) {
-            cerr << "[!] Failed to resubmit work request #" << id << ": " << r.error.message << " (status code: " << r.status_code << ")\n";
+            cerr << "[!] Failed to resubmit work request id=" << req.sqlite_id << ": " << r.error.message << " (status code: " << r.status_code << ")\n";
             continue;
         }
 
-        cout << "[*] Successfully submitted work request #" << id << " for room " << room_number << "\n";
-        db::delete_pending_work_request(database, id);
+        cout << "[*] Successfully submitted work request id=" << req.sqlite_id << " for room " << req.room_number << "\n";
+        db::delete_pending_work_request(database, req.sqlite_id);
         resubmitted++;
     }
 
