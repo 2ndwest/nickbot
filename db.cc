@@ -17,7 +17,8 @@ sqlite3* db::init() {
         CREATE TABLE IF NOT EXISTS pending_work_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             room_number TEXT NOT NULL,
-            details TEXT NOT NULL,
+            short_description TEXT NOT NULL,
+            additional_information TEXT NOT NULL DEFAULT '',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
     )", nullptr, nullptr, &err_msg);
@@ -32,11 +33,11 @@ sqlite3* db::init() {
     return database;
 }
 
-bool db::insert_pending_work_request(sqlite3* database, const PendingWorkRequest& request) {
+bool db::insert_pending_work_request(sqlite3* database, const AtlasWorkRequest& request) {
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(
         database,
-        "INSERT INTO pending_work_requests (room_number, details) VALUES (?, ?);",
+        "INSERT INTO pending_work_requests (room_number, short_description, additional_information) VALUES (?, ?, ?);",
         -1,
         &stmt,
         nullptr
@@ -47,7 +48,8 @@ bool db::insert_pending_work_request(sqlite3* database, const PendingWorkRequest
     }
 
     sqlite3_bind_text(stmt, 1, request.room_number.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, request.details.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, request.short_description.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, request.additional_information.c_str(), -1, SQLITE_TRANSIENT);
 
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -66,7 +68,7 @@ std::vector<db::PendingWorkRequest> db::get_pending_work_requests(sqlite3* datab
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(
         database,
-        "SELECT id, room_number, details FROM pending_work_requests ORDER BY created_at ASC;",
+        "SELECT id, room_number, short_description, additional_information FROM pending_work_requests ORDER BY created_at ASC;",
         -1,
         &stmt,
         nullptr
@@ -78,10 +80,14 @@ std::vector<db::PendingWorkRequest> db::get_pending_work_requests(sqlite3* datab
 
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
         const char* room = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-        const char* details = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        const char* short_desc = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        const char* additional_info = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
         requests.push_back({
-            room ? room : "<UNKNOWN ROOM>",
-            details ? details : "<UNKNOWN DETAILS>",
+            {
+                room ? room : "<UNKNOWN ROOM>",
+                short_desc ? short_desc : "<UNKNOWN SHORT_DESCRIPTION>",
+                additional_info ? additional_info : "",
+            },
             sqlite3_column_int(stmt, 0),
         });
     }

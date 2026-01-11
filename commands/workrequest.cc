@@ -10,9 +10,7 @@ using namespace std;
 // Forward declared so we can use it in the command handler.
 cpr::Response submit_work_request_to_atlas(
     cpr::Session& session,
-    const std::string& room_number,
-    const std::string& short_description,
-    const std::string& additional_information
+    const db::AtlasWorkRequest& request
 );
 
 // Mapping of Discord channel IDs to MIT room numbers. See for more details:
@@ -78,14 +76,11 @@ void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, 
         {config::cookiefile(), true, false}
     );
 
+    db::AtlasWorkRequest work_request{room_number, short_description, additional_information};
+
     if (!r.error) {
         // actually submit work request to Atlas
-        r = submit_work_request_to_atlas(
-            session,
-            room_number,
-            short_description,
-            additional_information
-        );
+        r = submit_work_request_to_atlas(session, work_request);
 
         if (r.error || r.status_code != 200) {
             std::cerr << "[!] Failed to submit work request: " << r.error.message << " (status code: " << r.status_code << ")\n";
@@ -96,7 +91,7 @@ void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, 
         // the user. we'll store their request in sqlite and replay it later.
         handle_touchstone_auth_failure(event, bot, r.error.message, false);
 
-        if (!db::insert_pending_work_request(database, {room_number, short_description})) {
+        if (!db::insert_pending_work_request(database, work_request)) {
             std::cerr << "[!] Failed to record work request: " << sqlite3_errmsg(database) << "\n";
             return event.edit_response("**Failed to record work request.** Please try again later.");
         } else std::cout << "[*] Work request stored in database for room " << room_number << " with short description: " << short_description << "\n";
@@ -115,11 +110,9 @@ void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, 
 
 cpr::Response submit_work_request_to_atlas(
     cpr::Session& session,
-    const std::string& room_number,
-    const std::string& short_description,
-    const std::string& additional_information
+    const db::AtlasWorkRequest& request
 ) {
-    std::cout << "[~] Starting repair request submission for room " << room_number << "\n";
+    std::cout << "[~] Starting repair request submission for room " << request.room_number << "\n";
 
     std::cout << "[~] Step 1: Initializing request session\n";
     session.SetUrl(cpr::Url{"https://adminappsts.mit.edu/facilities/CreateRequest.action"});
@@ -137,7 +130,7 @@ cpr::Response submit_work_request_to_atlas(
         {"facilities.request.locationType", "PM_RESIDENCE"},
         {"facilities.request.buildingLeased", "false"},
         {"facilities.request.residenceName", "62"},
-        {"facilities.request.residenceRoomNumber", room_number},
+        {"facilities.request.residenceRoomNumber", request.room_number},
         {"facilities.request.residenceLeased", "false"},
         {"facilities.request.parkingType", "PM_PARKING_LOT"},
         {"facilities.request.parkingDescr", ""},
@@ -160,8 +153,8 @@ cpr::Response submit_work_request_to_atlas(
         {"facilities.request.requestCategory", "H640;HOUS001"},
         {"facilities.request.fumeHood", ""},
         // Truncate the short description to the max length, just in case the caller didn't enforce this.
-        {"facilities.request.subjectLine", short_description.substr(0, MAX_SHORT_DESCRIPTION_LENGTH)},
-        {"facilities.request.description", additional_information},
+        {"facilities.request.subjectLine", request.short_description.substr(0, MAX_SHORT_DESCRIPTION_LENGTH)},
+        {"facilities.request.description", request.additional_information},
         {"facilities.request.specialInstructions", ""}, // don't know what you'd use this for, ngl
         {"facilities.request.creatorLocation", "62-2"}, // building 62, 2nd floor
         {"facilities.request.creatorPhone", "2ndwest@mit.edu"},
@@ -191,21 +184,16 @@ int commands::submit_pending_work_requests_to_atlas(sqlite3* database, cpr::Sess
 
     int submitted = 0;
     for (const auto& req : pending) {
-        cout << "[~] Submitting work request id=" << req.sqlite_id << " for room " << req.room_number << "\n";
+        cout << "[~] Submitting work request id=" << req.sqlite_id << " for room " << req.request.room_number << "\n";
 
-        cpr::Response r = submit_work_request_to_atlas(
-            session,
-            req.room_number,
-            req.details.substr(0, 40),
-            req.details
-        );
+        cpr::Response r = submit_work_request_to_atlas(session, req.request);
 
         if (r.error || r.status_code != 200) {
             cerr << "[!] Failed to submit work request id=" << req.sqlite_id << ": " << r.error.message << " (status code: " << r.status_code << ")\n";
             continue;
         }
 
-        cout << "[*] Successfully submitted work request id=" << req.sqlite_id << " for room " << req.room_number << "\n";
+        cout << "[*] Successfully submitted work request id=" << req.sqlite_id << " for room " << req.request.room_number << "\n";
         db::delete_pending_work_request(database, req.sqlite_id);
         submitted++;
     }
