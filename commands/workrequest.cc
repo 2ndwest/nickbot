@@ -112,7 +112,7 @@ void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, 
         string(!r.error ? "**Work request submitted:**\n" : "**Work request recorded:**\n") +
         "├ **Location:** 62-" + room_number + "\n"
         "├ **Short Description:** " + short_description + "\n" +
-        "├ **Additional Information:** " + (additional_information.empty() ? "None" : additional_information) + "\n" +
+        "├ **Additional Information:** " + (additional_information.empty() ? "N/A" : additional_information) + "\n" +
         (!r.error
             ? "-# Submitted directly via [Atlas](https://adminappsts.mit.edu/facilities/CreateRequest.action).\n"
             : "-# Saved and will be uploaded to [Atlas](https://adminappsts.mit.edu/facilities/CreateRequest.action) shortly.\n")
@@ -209,6 +209,6 @@ int commands::submit_pending_work_requests_to_atlas(sqlite3* database, cpr::Sess
         submitted++;
     }
 
-    cout << "[*] Submitted " << submitted << "/" << pending.size() << " pending work request(s).\n";
+    cout << "[*] Submitted " << submitted << "/" << pending.size() << " pending work requests.\n";
     return submitted;
 }

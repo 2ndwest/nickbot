@@ -93,7 +93,7 @@ std::vector<db::PendingWorkRequest> db::get_pending_work_requests(sqlite3* datab
     }
 
     sqlite3_finalize(stmt);
-    cout << "[*] sqlite: retrieved " << requests.size() << " pending work request(s).\n";
+    cout << "[~] sqlite: retrieved " << requests.size() << " pending work requests.\n";
     return requests;
 }
 
