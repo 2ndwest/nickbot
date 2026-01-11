@@ -3,8 +3,15 @@
 #include <ctime>
 #include <cstdlib>
 #include <algorithm>
+#include <variant>
 
 namespace utils {
+
+// Extract a value from a variant, returning a fallback if not present.
+template <typename T, typename Variant>
+inline T get_or(const Variant& v, const T& fallback) {
+    return std::holds_alternative<T>(v) ? std::get<T>(v) : fallback;
+}
 
 // Copying to-uppercase utility for strings.
 inline std::string uppercase(std::string s) {

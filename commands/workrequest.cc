@@ -3,6 +3,7 @@
 #include <libtouchstone.h>
 #include <iostream>
 #include "config.h"
+#include "utils.h"
 
 // Implementation at the end of the file (it's a bit long).
 // Forward declared so we can use it in the command handler.
@@ -19,11 +20,7 @@ void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, 
     std::string room_number = it->second;
 
     std::string short_description = std::get<std::string>(event.get_parameter("short_description"));
-
-    auto additional_information_raw = event.get_parameter("additional_information");
-    std::string additional_information = std::holds_alternative<std::string>(additional_information_raw)
-        ? std::get<std::string>(additional_information_raw)
-        : "";
+    std::string additional_information = utils::get_or<std::string>(event.get_parameter("additional_information"), "");
 
     if (short_description.length() > MAX_SHORT_DESCRIPTION_LENGTH) {
         event.reply(
