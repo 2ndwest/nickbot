@@ -14,7 +14,7 @@ void quickroom(const dpp::slashcommand_t& event, dpp::cluster& bot);
 
 // Submits all pending work requests stored in the database.
 // Returns the number of successfully submitted requests.
-int submit_pending_work_requests(sqlite3* database, cpr::Session& session);
+int submit_pending_work_requests_to_atlas(sqlite3* database, cpr::Session& session);
 
 // Handles Touchstone authentication failures DMing the admin to reauthenticate,
 // and (optionally) notifying the user that Touchstone authentication failed.

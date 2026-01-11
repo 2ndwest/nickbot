@@ -59,8 +59,8 @@ int main() {
 
             cout << "[*] Touchstone reauth succeeded.\n";
 
-            // submit any pending work requests stalled due to touchstone auth before
-            int submitted = commands::submit_pending_work_requests(database, s);
+            // submit any pending work requests that were stalled due to touchstone auth previously
+            int submitted = commands::submit_pending_work_requests_to_atlas(database, s);
 
             event.edit_response(
                 "Successfully re-authenticated to Touchstone!" +
@@ -91,9 +91,17 @@ int main() {
             workrequest_cmd.add_option(
                 dpp::command_option(
                     dpp::co_string,
-                    "details",
-                    "A detailed description of the requested services.",
+                    "short_description",
+                    "A short description of the issue (max 40 characters).",
                     true
+                )
+            );
+            workrequest_cmd.add_option(
+                dpp::command_option(
+                    dpp::co_string,
+                    "additional_information",
+                    "Additional details about the requested services.",
+                    false
                 )
             );
             bot.global_command_create(workrequest_cmd);
