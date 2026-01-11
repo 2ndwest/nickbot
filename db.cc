@@ -1,14 +1,12 @@
 #include "db.h"
 #include <iostream>
 
-using namespace std;
-
 sqlite3* db::init() {
     sqlite3* database;
     int rc = sqlite3_open("workrequests.db", &database);
 
     if (rc) {
-        cerr << "[!] sqlite: couldn't open database: " << sqlite3_errmsg(database) << "\n";
+        std::cerr << "[!] sqlite: couldn't open database: " << sqlite3_errmsg(database) << "\n";
         return nullptr;
     }
 
@@ -23,13 +21,13 @@ sqlite3* db::init() {
         );
     )", nullptr, nullptr, &err_msg);
     if (rc != SQLITE_OK) {
-        cerr << "[!] sqlite: SQL error: " << err_msg << "\n";
+        std::cerr << "[!] sqlite: SQL error: " << err_msg << "\n";
         sqlite3_free(err_msg);
         sqlite3_close(database);
         return nullptr;
     }
 
-    cout << "[*] sqlite: db initialized successfully.\n";
+    std::cout << "[*] sqlite: db initialized successfully.\n";
     return database;
 }
 
@@ -43,7 +41,7 @@ bool db::insert_pending_work_request(sqlite3* database, const AtlasWorkRequest& 
         nullptr
     );
     if (rc != SQLITE_OK) {
-        cerr << "[!] sqlite: failed to prepare statement: " << sqlite3_errmsg(database) << "\n";
+        std::cerr << "[!] sqlite: failed to prepare statement: " << sqlite3_errmsg(database) << "\n";
         return false;
     }
 
@@ -55,11 +53,11 @@ bool db::insert_pending_work_request(sqlite3* database, const AtlasWorkRequest& 
     sqlite3_finalize(stmt);
 
     if (rc != SQLITE_DONE) {
-        cerr << "[!] sqlite: failed to insert pending work request: " << sqlite3_errmsg(database) << "\n";
+        std::cerr << "[!] sqlite: failed to insert pending work request: " << sqlite3_errmsg(database) << "\n";
         return false;
     }
 
-    cout << "[*] sqlite: created pending work request id=" << sqlite3_last_insert_rowid(database) << " for room " << request.room_number << "\n";
+    std::cout << "[*] sqlite: created pending work request id=" << sqlite3_last_insert_rowid(database) << " for room " << request.room_number << "\n";
     return true;
 }
 
@@ -74,7 +72,7 @@ std::vector<db::PendingWorkRequest> db::get_pending_work_requests(sqlite3* datab
         nullptr
     );
     if (rc != SQLITE_OK) {
-        cerr << "[!] sqlite: failed to prepare select statement: " << sqlite3_errmsg(database) << "\n";
+        std::cerr << "[!] sqlite: failed to prepare select statement: " << sqlite3_errmsg(database) << "\n";
         return requests;
     }
 
@@ -93,7 +91,7 @@ std::vector<db::PendingWorkRequest> db::get_pending_work_requests(sqlite3* datab
     }
 
     sqlite3_finalize(stmt);
-    cout << "[~] sqlite: retrieved " << requests.size() << " pending work request(s).\n";
+    std::cout << "[~] sqlite: retrieved " << requests.size() << " pending work request(s).\n";
     return requests;
 }
 
@@ -107,7 +105,7 @@ bool db::delete_pending_work_request(sqlite3* database, int id) {
         nullptr
     );
     if (rc != SQLITE_OK) {
-        cerr << "[!] sqlite: failed to prepare delete statement: " << sqlite3_errmsg(database) << "\n";
+        std::cerr << "[!] sqlite: failed to prepare delete statement: " << sqlite3_errmsg(database) << "\n";
         return false;
     }
 
@@ -116,10 +114,10 @@ bool db::delete_pending_work_request(sqlite3* database, int id) {
     sqlite3_finalize(stmt);
 
     if (rc != SQLITE_DONE) {
-        cerr << "[!] sqlite: failed to delete pending work request id=" << id << ": " << sqlite3_errmsg(database) << "\n";
+        std::cerr << "[!] sqlite: failed to delete pending work request id=" << id << ": " << sqlite3_errmsg(database) << "\n";
         return false;
     }
 
-    cout << "[*] sqlite: deleted pending work request id=" << id << "\n";
+    std::cout << "[*] sqlite: deleted pending work request id=" << id << "\n";
     return true;
 }

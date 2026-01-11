@@ -4,8 +4,6 @@
 #include <iostream>
 #include "config.h"
 
-using namespace std;
-
 // Implementation at the end of the file (it's a bit long).
 // Forward declared so we can use it in the command handler.
 cpr::Response submit_work_request_to_atlas(
@@ -18,21 +16,21 @@ const int MAX_SHORT_DESCRIPTION_LENGTH = 40; // via the Atlas UI, not sure if th
 void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, sqlite3* database) {
     auto it = channel_to_room.find(event.command.channel_id);
     if (it == channel_to_room.end()) return event.reply("**This channel is not associated with a room.** Please use this command in a room channel.");
-    string room_number = it->second;
+    std::string room_number = it->second;
 
-    string short_description = get<string>(event.get_parameter("short_description"));
+    std::string short_description = std::get<std::string>(event.get_parameter("short_description"));
 
     auto additional_information_raw = event.get_parameter("additional_information");
-    string additional_information = holds_alternative<string>(additional_information_raw)
-        ? get<string>(additional_information_raw)
+    std::string additional_information = std::holds_alternative<std::string>(additional_information_raw)
+        ? std::get<std::string>(additional_information_raw)
         : "";
 
     if (short_description.length() > MAX_SHORT_DESCRIPTION_LENGTH) {
         event.reply(
             dpp::message(
                 "**Short description is too long** (" +
-                to_string(short_description.length()) + " characters). Limit: " +
-                to_string(MAX_SHORT_DESCRIPTION_LENGTH) + " characters. Please try again."
+                std::to_string(short_description.length()) + " characters). Limit: " +
+                std::to_string(MAX_SHORT_DESCRIPTION_LENGTH) + " characters. Please try again."
             ).set_flags(dpp::m_ephemeral)
         );
         return;
@@ -72,7 +70,7 @@ void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, 
     }
 
     event.edit_response(
-        string(!r.error ? "**Work request submitted:**\n" : "**Work request recorded:**\n") +
+        std::string(!r.error ? "**Work request submitted:**\n" : "**Work request recorded:**\n") +
         "├ **Location:** 62-" + room_number + "\n"
         "├ **Short Description:** " + short_description + "\n" +
         "├ **Additional Information:** " + (additional_information.empty() ? "N/A" : additional_information) + "\n" +
@@ -150,28 +148,28 @@ cpr::Response submit_work_request_to_atlas(
 std::pair<int, int> commands::submit_pending_work_requests_to_atlas(sqlite3* database, cpr::Session& session) {
     auto pending = db::get_pending_work_requests(database);
     if (pending.empty()) {
-        cout << "[*] No pending work requests to submit.\n";
+        std::cout << "[*] No pending work requests to submit.\n";
         return {0, 0};
     }
 
-    cout << "[~] Submitting " << pending.size() << " pending work request(s)...\n";
+    std::cout << "[~] Submitting " << pending.size() << " pending work request(s)...\n";
 
     int submitted = 0;
     for (const auto& req : pending) {
-        cout << "[~] Submitting work request id=" << req.sqlite_id << " for room " << req.request.room_number << "\n";
+        std::cout << "[~] Submitting work request id=" << req.sqlite_id << " for room " << req.request.room_number << "\n";
 
         cpr::Response r = submit_work_request_to_atlas(session, req.request);
 
         if (r.error || r.status_code != 200) {
-            cerr << "[!] Failed to submit work request id=" << req.sqlite_id << ": " << r.error.message << " (status code: " << r.status_code << ")\n";
+            std::cerr << "[!] Failed to submit work request id=" << req.sqlite_id << ": " << r.error.message << " (status code: " << r.status_code << ")\n";
             continue;
         }
 
-        cout << "[*] Successfully submitted work request id=" << req.sqlite_id << " for room " << req.request.room_number << "\n";
+        std::cout << "[*] Successfully submitted work request id=" << req.sqlite_id << " for room " << req.request.room_number << "\n";
         db::delete_pending_work_request(database, req.sqlite_id);
         submitted++;
     }
 
-    cout << "[*] Submitted " << submitted << "/" << pending.size() << " pending work requests.\n";
+    std::cout << "[*] Submitted " << submitted << "/" << pending.size() << " pending work requests.\n";
     return {submitted, static_cast<int>(pending.size())};
 }

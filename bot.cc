@@ -6,30 +6,28 @@
 #include "db.h"
 #include "utils.h"
 
-using namespace std;
-
 int main() {
     if (!config::token() ||
         !config::kerb() ||
         !config::kerb_password() ||
         !config::admin_user_id() ||
         !config::cookiefile()) {
-        cerr << "[!] Some required environment variables are not set.\n";
+        std::cerr << "[!] Some required environment variables are not set.\n";
         return 1;
     }
 
-    cout << "[~] Starting bot...\n";
+    std::cout << "[~] Starting bot...\n";
 
     sqlite3* database = db::init();
     if (!database) {
-        cerr << "[!] Failed to initialize sqlite db.\n";
+        std::cerr << "[!] Failed to initialize sqlite db.\n";
         return 1;
     }
 
     dpp::cluster bot(config::token());
 
     bot.on_slashcommand([&bot, database](const dpp::slashcommand_t& event) {
-        cout << "[~] Command invoked: /" << event.command.get_command_name() << "\n";
+        std::cout << "[~] Command invoked: /" << event.command.get_command_name() << "\n";
 
         if (event.command.get_command_name() == "workrequest") {
             commands::workrequest(event, bot, database);
@@ -40,7 +38,7 @@ int main() {
 
     bot.on_button_click([database](const dpp::button_click_t& event) {
         if (event.custom_id == "touchstone_reauth") {
-            cout << "[~] Reauth button clicked, authenticating to Atlas...\n";
+            std::cout << "[~] Reauth button clicked, authenticating to Atlas...\n";
             event.reply("Sending a 2FA prompt to your device...");
 
             cpr::Session s = libtouchstone::session(config::cookiefile());
@@ -52,12 +50,12 @@ int main() {
             );
 
             if (r.error) {
-                cout << "[!] Touchstone reauth failed: " << r.error.message << "\n";
+                std::cout << "[!] Touchstone reauth failed: " << r.error.message << "\n";
                 event.edit_response("Reauth failed: " + r.error.message);
                 return;
             }
 
-            cout << "[*] Touchstone reauth succeeded. Handling any unfinished business...\n";
+            std::cout << "[*] Touchstone reauth succeeded. Handling any unfinished business...\n";
 
             // submit any pending work requests that were stalled due to touchstone auth previously
             auto [submitted_reqs, initial_pending_reqs] = commands::submit_pending_work_requests_to_atlas(database, s);
@@ -65,8 +63,8 @@ int main() {
             event.edit_response(
                 "Successfully re-authenticated to Touchstone!" +
                 (initial_pending_reqs > 0
-                    ? "\n├ Submitted **" + to_string(submitted_reqs) + "/" +
-                      to_string(initial_pending_reqs) +
+                    ? "\n├ Submitted **" + std::to_string(submitted_reqs) + "/" +
+                      std::to_string(initial_pending_reqs) +
                       "** pending work requests to [Atlas](https://adminappsts.mit.edu/facilities/CreateRequest.action)."
                     : "")
             );
@@ -75,7 +73,7 @@ int main() {
 
     bot.on_ready([&bot](auto event) {
         if (dpp::run_once<struct register_bot_commands>()) {
-            cout << "[!] Connected to Discord.\n";
+            std::cout << "[!] Connected to Discord.\n";
 
             // set presence to show last restarted time
             bot.set_presence(dpp::presence(
@@ -127,12 +125,12 @@ int main() {
             // list available commands
             bot.global_commands_get([](const dpp::confirmation_callback_t& callback) {
                 if (callback.is_error()) {
-                    cerr << "[!] Error getting commands: " << callback.get_error().message << "\n";
+                    std::cerr << "[!] Error getting commands: " << callback.get_error().message << "\n";
                 } else {
-                    auto commands = get<dpp::slashcommand_map>(callback.value);
-                    cout << "[?] Available commands globally:\n";
+                    auto commands = std::get<dpp::slashcommand_map>(callback.value);
+                    std::cout << "[?] Available commands globally:\n";
                     for (const auto& [id, cmd] : commands) {
-                        cout << "- " << cmd.name << " (snowflake: " << id << ")\n";
+                        std::cout << "- " << cmd.name << " (snowflake: " << id << ")\n";
                     }
                 }
             });
