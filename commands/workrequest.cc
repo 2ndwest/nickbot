@@ -126,8 +126,8 @@ cpr::Response submit_work_request_to_atlas(
         {"facilities.request.description", request.additional_information},
         {"facilities.request.specialInstructions", ""}, // don't know what you'd use this for, ngl
         {"facilities.request.creatorLocation", "62-2"}, // building 62, 2nd floor
-        {"facilities.request.creatorPhone", "2ndwest@mit.edu"},
-        {"facilities.request.creatorEmail", "(617)+253-2871"}, // via https://officesdirectory.mit.edu/east-campus
+        {"facilities.request.creatorPhone", "(617) 253-2871"}, // via https://officesdirectory.mit.edu/east-campus
+        {"facilities.request.creatorEmail", "2ndwest@MIT.EDU"},
         {"facilities.request.ccEmail", ""},
         {"facilities.request.requestorName", ""},
         {"facilities.request.requestorKerbId", ""},
