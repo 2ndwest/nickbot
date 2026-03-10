@@ -95,8 +95,9 @@ cpr::Response submit_work_request_to_atlas(
     );
 
     if (r.error || r.status_code != 200) {
-        std::cerr << "[!] CreateRequest failed: "
-                  << r.error.message << " (status code: " << r.status_code << ")\n";
+        std::cerr << "[!] CreateRequest failed";
+        if (r.error) std::cerr << ": " << r.error.message;
+        std::cerr << " (status code: " << r.status_code << ")\n";
         return r;
     }
 
