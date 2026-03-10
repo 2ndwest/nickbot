@@ -84,11 +84,19 @@ cpr::Response submit_work_request_to_atlas(
     std::cout << "[~] Starting repair request submission for room " << request.room_number << "...\n";
 
     std::cout << "[~] Step 1: Initializing request session\n";
-    session.SetUrl(cpr::Url{"https://adminappsts.mit.edu/facilities/CreateRequest.action"});
-    cpr::Response r = session.Get();
+    cpr::Response r = libtouchstone::authenticate(
+        session,
+        "https://adminappsts.mit.edu/facilities/CreateRequest.action",
+        config::kerb(),
+        config::kerb_password(),
+        // block=false as we assume the caller has fresh cookies from some Touchstone
+        // protected site, there's just a chance we get put through another SSO redirect
+        {config::cookiefile(), false, false}
+    );
 
-    if (r.status_code != 200) {
-        std::cerr << "[!] CreateRequest failed.";
+    if (r.error || r.status_code != 200) {
+        std::cerr << "[!] CreateRequest failed: "
+                  << r.error.message << " (status code: " << r.status_code << ")\n";
         return r;
     }
 
