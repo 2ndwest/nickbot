@@ -6,12 +6,33 @@
 #include <iostream>
 #include <string>
 #include <map>
+#include <optional>
+#include <vector>
 #include "config.h"
 
 namespace commands {
 
 void workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, sqlite3* database);
 void quickroom(const dpp::slashcommand_t& event, dpp::cluster& bot);
+void quicknear(const dpp::slashcommand_t& event, dpp::cluster& bot);
+
+// A classroom listed as available on QuickRoom.
+struct quickroom_entry {
+    std::string building; // Uppercased building number, e.g. "26" or "E17".
+    std::string room;     // Room number, e.g. "26-100".
+    int capacity;
+    time_t begin;         // Start of the first availability window (unix timestamp).
+    time_t end;           // End of the first availability window (unix timestamp).
+    int distance;         // Graph distance from the queried building (0 = same building).
+};
+
+// Fetches all currently available classrooms from QuickRoom. On failure, replies to the
+// event with an appropriate error message and returns std::nullopt.
+std::optional<std::vector<quickroom_entry>> fetch_quickroom(const dpp::slashcommand_t& event, dpp::cluster& bot);
+
+// Formats rooms into a Discord message. Rooms available right now are listed first (nearest
+// buildings first); rooms that only open up more than 5 minutes from now are sorted to the bottom.
+std::string format_quickroom_entries(std::vector<quickroom_entry> rooms, const std::string& header);
 
 // Submits all pending work requests stored in the database. Deletes pending requests from db on success.
 // Returns a pair of (number of successfully submitted requests, initial number of pending requests).

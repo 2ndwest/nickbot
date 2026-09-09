@@ -33,6 +33,8 @@ int main() {
             commands::workrequest(event, bot, database);
         } else if (event.command.get_command_name() == "quickroom") {
             commands::quickroom(event, bot);
+        } else if (event.command.get_command_name() == "quicknear") {
+            commands::quicknear(event, bot);
         }
     });
 
@@ -121,6 +123,30 @@ int main() {
                 )
             );
             bot.global_command_create(quickroom_cmd);
+
+            // quicknear command
+            dpp::slashcommand quicknear_cmd(
+                "quicknear",
+                "List currently available rooms in a building and its neighboring buildings.",
+                bot.me.id
+            );
+            quicknear_cmd.add_option(
+                dpp::command_option(
+                    dpp::co_string,
+                    "building",
+                    "Building number to search around (e.g. 1, 34, 66).",
+                    true
+                )
+            );
+            quicknear_cmd.add_option(
+                dpp::command_option(
+                    dpp::co_integer,
+                    "radius",
+                    "How many buildings away to search (default 2).",
+                    false
+                ).set_min_value(1).set_max_value(3)
+            );
+            bot.global_command_create(quicknear_cmd);
 
             // list available commands
             bot.global_commands_get([](const dpp::confirmation_callback_t& callback) {
