@@ -13,7 +13,8 @@ FetchContent_MakeAvailable(libtouchstone json_cpp)
 find_package(dpp REQUIRED)
 find_package(SQLite3 REQUIRED)
 
-file(GLOB COMMAND_SOURCES commands/*.cc)
+# CONFIGURE_DEPENDS: re-glob on every build so newly added command files are picked up without a manual reconfigure.
+file(GLOB COMMAND_SOURCES CONFIGURE_DEPENDS commands/*.cc)
 add_executable(bot bot.cc db.cc ${COMMAND_SOURCES})
 
 target_link_libraries(bot libtouchstone::libtouchstone dpp::dpp SQLite::SQLite3 json)
