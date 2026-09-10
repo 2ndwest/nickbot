@@ -48,7 +48,6 @@ std::optional<std::vector<commands::quickroom_entry>> commands::fetch_quickroom(
         rooms.push_back({
             utils::uppercase(classroom["buildingName"].getString()),
             classroom["room"].getString(),
-            (int)classroom["capacity"].getLong(),
             utils::parse_iso_utc(availabilities[0]["begin"].getString()),
             utils::parse_iso_utc(availabilities[0]["end"].getString()),
             0
@@ -79,7 +78,7 @@ std::string commands::format_quickroom_entries(std::vector<quickroom_entry> room
             in_later_section = true;
             line += "**Opening up later:**\n";
         }
-        line += "├ **" + room.room + "** (capacity: " + std::to_string(room.capacity) + ") — " +
+        line += "├ **" + room.room + "** — " +
             utils::format_time_et(room.begin) + " → " + utils::format_time_et(room.end) + "\n";
 
         if (response.size() + line.size() > MAX_MESSAGE_LENGTH) break;

@@ -20,7 +20,6 @@ void quicknear(const dpp::slashcommand_t& event, dpp::cluster& bot);
 struct quickroom_entry {
     std::string building; // Uppercased building number, e.g. "26" or "E17".
     std::string room;     // Room number, e.g. "26-100".
-    int capacity;
     time_t begin;         // Start of the first availability window (unix timestamp).
     time_t end;           // End of the first availability window (unix timestamp).
     int distance;         // Graph distance from the queried building (0 = same building).
