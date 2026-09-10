@@ -144,7 +144,7 @@ int main() {
                     "radius",
                     "How many buildings away to search (default 2).",
                     false
-                ).set_min_value(1).set_max_value(3)
+                ).set_min_value(1).set_max_value(5)
             );
             bot.global_command_create(quicknear_cmd);
 
