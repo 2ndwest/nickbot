@@ -26,15 +26,19 @@ int main() {
 
     dpp::cluster bot(config::token());
 
+    room_schedule::start([&bot](const std::string& error_message) {
+        commands::alert_admin_touchstone_failure(bot, error_message, "the hourly room bookings refresh");
+    });
+
     bot.on_slashcommand([&bot, database](const dpp::slashcommand_t& event) {
         std::cout << "[~] Command invoked: /" << event.command.get_command_name() << "\n";
 
         if (event.command.get_command_name() == "workrequest") {
             commands::workrequest(event, bot, database);
         } else if (event.command.get_command_name() == "quickroom") {
-            commands::quickroom(event, bot);
+            commands::quickroom(event);
         } else if (event.command.get_command_name() == "quicknear") {
-            commands::quicknear(event, bot);
+            commands::quicknear(event);
         }
     });
 
@@ -61,6 +65,11 @@ int main() {
 
             // submit any pending work requests that were stalled due to touchstone auth previously
             auto [submitted_reqs, initial_pending_reqs] = commands::submit_pending_work_requests_to_atlas(database, s);
+
+            // resume refreshing room bookings, which stops at the first auth failure. curl only writes the
+            // cookie jar when a session is destroyed, so flush it first or the refresh would read stale cookies
+            curl_easy_setopt(s.GetCurlHolder()->handle, CURLOPT_COOKIELIST, "FLUSH");
+            room_schedule::refresh_now();
 
             event.edit_response(
                 "Successfully re-authenticated to Touchstone!" +

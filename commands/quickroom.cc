@@ -1,9 +1,5 @@
 #include "commands.h"
 #include <algorithm>
-#include <iostream>
-#include <libtouchstone.h>
-#include <json.h>
-#include "config.h"
 #include "utils.h"
 
 // Rooms whose availability begins more than this far in the future are sorted to the bottom.
@@ -12,64 +8,34 @@ static constexpr time_t STARTS_LATER_THRESHOLD = 5 * 60;
 // Discord message length limit (with some headroom).
 static constexpr size_t MAX_MESSAGE_LENGTH = 1900;
 
-std::optional<std::vector<commands::quickroom_entry>> commands::fetch_quickroom(const dpp::slashcommand_t& event, dpp::cluster& bot) {
-    std::cout << "[?] Authenticating to Quickroom API...\n";
-
-    cpr::Session s = libtouchstone::session(config::cookiefile());
-    cpr::Response r = libtouchstone::authenticate(s,
-        "https://classrooms.mit.edu/classrooms/quickroom",
-        config::kerb(), config::kerb_password(),
-        // block = false is critical, we don't want to be stuck waiting for a 2FA prompt
-        {config::cookiefile(), true, false}
-    );
-
-    if (r.error) {
-        handle_touchstone_auth_failure(event, bot, r.error.message);
-        return std::nullopt;
-    }
-
-    std::cout << "[?] Quickroom API response (" << r.text.size() << " chars): " << r.text.substr(0, 50) << "...\n";
-
-    auto [status, json] = jt::Json::parse(r.text);
-    if (status != jt::Json::success) {
-        event.edit_response("Failed to parse JSON from QuickRoom.");
-        return std::nullopt;
-    }
-    if (json.contains("error")) {
-        event.edit_response("**QuickRoom request failed.** It may be outside operating hours, try again later.");
-        return std::nullopt;
-    }
-
-    std::vector<quickroom_entry> rooms;
-    for (auto& classroom : json["data"]["classrooms"].getArray()) {
-        auto& availabilities = classroom["availabilities"].getArray();
-        if (availabilities.empty()) continue;
-
-        rooms.push_back({
-            utils::uppercase(classroom["buildingName"].getString()),
-            classroom["room"].getString(),
-            utils::parse_iso_utc(availabilities[0]["begin"].getString()),
-            utils::parse_iso_utc(availabilities[0]["end"].getString()),
-            0
-        });
+std::optional<std::vector<room_schedule::free_room>> commands::find_free_rooms(const dpp::slashcommand_t& event) {
+    auto rooms = room_schedule::find_free_rooms(time(nullptr));
+    if (!rooms) {
+        event.reply("**Room schedules aren't loaded yet.** The bot may have just restarted, or Touchstone may need reauthentication. Try again in a few minutes.");
     }
     return rooms;
 }
 
-std::string commands::format_quickroom_entries(std::vector<quickroom_entry> rooms, const std::string& header) {
+std::string commands::format_free_rooms(std::vector<room_schedule::free_room> rooms, const std::string& header,
+                                        const std::map<std::string, int>& distances) {
     time_t now = time(nullptr);
-    auto starts_later = [now](const quickroom_entry& room) { return room.begin > now + STARTS_LATER_THRESHOLD; };
+    auto starts_later = [now](const room_schedule::free_room& room) { return room.begin > now + STARTS_LATER_THRESHOLD; };
+    auto distance = [&](const room_schedule::free_room& room) {
+        auto it = distances.find(room.building);
+        return it == distances.end() ? 0 : it->second;
+    };
 
     // Rooms available right now come first (nearest buildings first), then rooms that only open up later.
-    std::sort(rooms.begin(), rooms.end(), [&](const quickroom_entry& a, const quickroom_entry& b) {
+    std::sort(rooms.begin(), rooms.end(), [&](const room_schedule::free_room& a, const room_schedule::free_room& b) {
         if (starts_later(a) != starts_later(b)) return !starts_later(a);
         if (starts_later(a) && a.begin != b.begin) return a.begin < b.begin;
-        if (a.distance != b.distance) return a.distance < b.distance;
+        if (distance(a) != distance(b)) return distance(a) < distance(b);
         return a.room < b.room;
     });
 
     std::string response = header;
     bool in_later_section = false;
+    bool any_warnings = false;
     size_t shown = 0;
 
     for (const auto& room : rooms) {
@@ -78,11 +44,17 @@ std::string commands::format_quickroom_entries(std::vector<quickroom_entry> room
             in_later_section = true;
             line += "**Opening up later:**\n";
         }
-        line += "├ **" + room.room + "** — " +
-            utils::format_time_et(room.begin) + " → " + utils::format_time_et(room.end) + "\n";
+        line += "├ **" + room.room + "** — " + utils::format_time_et(room.begin) + " → " +
+            (room.until_end_of_day ? "end of day" : utils::format_time_et(room.end));
+        if (!room.hydrant_conflicts.empty()) {
+            line += " ⚠️ Hydrant:";
+            for (size_t i = 0; i < room.hydrant_conflicts.size(); i++) line += (i ? ", " : " ") + room.hydrant_conflicts[i];
+        }
+        line += "\n";
 
         if (response.size() + line.size() > MAX_MESSAGE_LENGTH) break;
         response += line;
+        any_warnings |= !room.hydrant_conflicts.empty();
         shown++;
     }
 
@@ -90,26 +62,27 @@ std::string commands::format_quickroom_entries(std::vector<quickroom_entry> room
         response += "├ *...and " + std::to_string(rooms.size() - shown) + " more*\n";
     }
 
-    response += "-# Sourced via [QuickRoom](https://classrooms.mit.edu/classrooms/#/quickroom). May not be comprehensive.\n";
+    response += "-# Sourced from [MIT room bookings](https://classrooms.mit.edu/classrooms/) and [Hydrant](https://hydrant.mit.edu), refreshed hourly. Not every room is unlocked.";
+    if (any_warnings) response += " ⚠️ = Hydrant lists a class the room bookings don't.";
+    response += "\n";
     return response;
 }
 
-void commands::quickroom(const dpp::slashcommand_t& event, dpp::cluster& bot) {
+void commands::quickroom(const dpp::slashcommand_t& event) {
     std::string building_query = std::get<std::string>(event.get_parameter("building"));
-    event.reply("Looking up available rooms in building **" + building_query + "**...");
+    std::string building = room_schedule::graph_building(utils::uppercase(building_query));
 
-    auto rooms = fetch_quickroom(event, bot);
+    auto rooms = find_free_rooms(event);
     if (!rooms) return;
 
-    std::string building = utils::uppercase(building_query);
     rooms->erase(
-        std::remove_if(rooms->begin(), rooms->end(), [&](const quickroom_entry& room) { return room.building != building; }),
+        std::remove_if(rooms->begin(), rooms->end(), [&](const room_schedule::free_room& room) { return room.building != building; }),
         rooms->end()
     );
 
     if (rooms->empty()) {
-        event.edit_response("No available rooms found on [QuickRoom](https://classrooms.mit.edu/classrooms/#/quickroom) for building **" + building_query + "**.");
+        event.reply("No available rooms found in building **" + building_query + "**.");
     } else {
-        event.edit_response(format_quickroom_entries(*rooms, "**Available rooms in building " + building_query + "**:\n"));
+        event.reply(format_free_rooms(*rooms, "**Available rooms in building " + building_query + "**:\n"));
     }
 }

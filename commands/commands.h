@@ -9,52 +9,34 @@
 #include <optional>
 #include <vector>
 #include "config.h"
+#include "room_schedule.h"
 
 namespace commands {
 
 void workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, sqlite3* database);
-void quickroom(const dpp::slashcommand_t& event, dpp::cluster& bot);
-void quicknear(const dpp::slashcommand_t& event, dpp::cluster& bot);
+void quickroom(const dpp::slashcommand_t& event);
+void quicknear(const dpp::slashcommand_t& event);
 
-// A classroom listed as available on QuickRoom.
-struct quickroom_entry {
-    std::string building; // Uppercased building number, e.g. "26" or "E17".
-    std::string room;     // Room number, e.g. "26-100".
-    time_t begin;         // Start of the first availability window (unix timestamp).
-    time_t end;           // End of the first availability window (unix timestamp).
-    int distance;         // Graph distance from the queried building (0 = same building).
-};
+// Every room free now or opening up soon (see room_schedule::find_free_rooms). If schedules aren't
+// loaded, replies to the event with an error message and returns std::nullopt.
+std::optional<std::vector<room_schedule::free_room>> find_free_rooms(const dpp::slashcommand_t& event);
 
-// Fetches all currently available classrooms from QuickRoom. On failure, replies to the
-// event with an appropriate error message and returns std::nullopt.
-std::optional<std::vector<quickroom_entry>> fetch_quickroom(const dpp::slashcommand_t& event, dpp::cluster& bot);
-
-// Formats rooms into a Discord message. Rooms available right now are listed first (nearest
-// buildings first); rooms that only open up more than 5 minutes from now are sorted to the bottom.
-std::string format_quickroom_entries(std::vector<quickroom_entry> rooms, const std::string& header);
+// Formats rooms into a Discord message. Rooms available right now are listed first (nearest buildings
+// first, by `distances`: building -> graph distance); rooms that only open up more than 5 minutes from
+// now are sorted to the bottom.
+std::string format_free_rooms(std::vector<room_schedule::free_room> rooms, const std::string& header,
+                              const std::map<std::string, int>& distances = {});
 
 // Submits all pending work requests stored in the database. Deletes pending requests from db on success.
 // Returns a pair of (number of successfully submitted requests, initial number of pending requests).
 std::pair<int, int> submit_pending_work_requests_to_atlas(sqlite3* database, cpr::Session& session);
 
-// Handles Touchstone authentication failures DMing the admin to reauthenticate,
-// and (optionally) notifying the user that Touchstone authentication failed.
-inline void handle_touchstone_auth_failure(
-    const dpp::slashcommand_t& event,
-    dpp::cluster& bot,
-    const std::string& error_message,
-    bool alert_user = true // Whether to notify the user authentication failed.
-) {
-    if (alert_user) event.edit_response("**Touchstone authentication failed.** <@" + std::string(config::admin_user_id()) + "> has been notified to reauthenticate. Try again later.");
-
+// DMs the admin a button to reauthenticate to Touchstone. `triggered_by` says what hit the failure.
+inline void alert_admin_touchstone_failure(dpp::cluster& bot, const std::string& error_message, const std::string& triggered_by) {
     dpp::message dm(
         "**Touchstone authentication failed:**\n"
         "├ Message: `" + error_message + "`\n"
-        "├ Triggered by: <@" + std::to_string(event.command.usr.id) + "> "
-        "([jump to message](https://discord.com/channels/" +
-        std::to_string(event.command.guild_id) + "/" +
-        std::to_string(event.command.channel_id) + "/" +
-        std::to_string(event.command.id) + "))"
+        "├ Triggered by: " + triggered_by
     );
     dm.add_component(
         dpp::component().add_component(
@@ -67,6 +49,25 @@ inline void handle_touchstone_auth_failure(
     );
     bot.direct_message_create(dpp::snowflake(config::admin_user_id()), dm);
     std::cout << "[!] Touchstone auth failed, notified admin to reauthenticate.\n";
+}
+
+// Handles Touchstone authentication failures DMing the admin to reauthenticate,
+// and (optionally) notifying the user that Touchstone authentication failed.
+inline void handle_touchstone_auth_failure(
+    const dpp::slashcommand_t& event,
+    dpp::cluster& bot,
+    const std::string& error_message,
+    bool alert_user = true // Whether to notify the user authentication failed.
+) {
+    if (alert_user) event.edit_response("**Touchstone authentication failed.** <@" + std::string(config::admin_user_id()) + "> has been notified to reauthenticate. Try again later.");
+
+    alert_admin_touchstone_failure(bot, error_message,
+        "<@" + std::to_string(event.command.usr.id) + "> "
+        "([jump to message](https://discord.com/channels/" +
+        std::to_string(event.command.guild_id) + "/" +
+        std::to_string(event.command.channel_id) + "/" +
+        std::to_string(event.command.id) + "))"
+    );
 }
 
 // Mapping of Discord channel IDs to MIT room numbers. See for more details:

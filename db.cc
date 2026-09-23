@@ -19,6 +19,15 @@ sqlite3* db::init() {
             additional_information TEXT NOT NULL DEFAULT '',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS room_fetches (
+            room TEXT PRIMARY KEY,
+            fetched_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS room_bookings (
+            room TEXT NOT NULL,
+            start INTEGER NOT NULL,
+            end INTEGER NOT NULL
+        );
     )", nullptr, nullptr, &err_msg);
     if (rc != SQLITE_OK) {
         std::cerr << "[!] sqlite: SQL error: " << err_msg << "\n";
@@ -120,4 +129,69 @@ bool db::delete_pending_work_request(sqlite3* database, int id) {
 
     std::cout << "[*] sqlite: deleted pending work request id=" << id << "\n";
     return true;
+}
+
+bool db::replace_room_bookings(sqlite3* database, const std::string& room, const RoomBookings& bookings) {
+    // One transaction so readers never see a room with its old bookings deleted but new ones missing.
+    sqlite3_exec(database, "BEGIN;", nullptr, nullptr, nullptr);
+
+    auto run = [&](const char* sql, auto bind) {
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(database, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+        bind(stmt);
+        int rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        return rc == SQLITE_DONE;
+    };
+    auto bind_room = [&](sqlite3_stmt* stmt) { sqlite3_bind_text(stmt, 1, room.c_str(), -1, SQLITE_TRANSIENT); };
+
+    bool ok = run("DELETE FROM room_bookings WHERE room = ?;", bind_room) &&
+        run("INSERT OR REPLACE INTO room_fetches (room, fetched_at) VALUES (?, ?);", [&](sqlite3_stmt* stmt) {
+            bind_room(stmt);
+            sqlite3_bind_int64(stmt, 2, bookings.fetched_at);
+        });
+    for (const auto& booking : bookings.bookings) {
+        if (!ok) break;
+        ok = run("INSERT INTO room_bookings (room, start, end) VALUES (?, ?, ?);", [&](sqlite3_stmt* stmt) {
+            bind_room(stmt);
+            sqlite3_bind_int64(stmt, 2, booking.first);
+            sqlite3_bind_int64(stmt, 3, booking.second);
+        });
+    }
+
+    if (!ok) {
+        std::cerr << "[!] sqlite: failed to save bookings for room " << room << ": " << sqlite3_errmsg(database) << "\n";
+        sqlite3_exec(database, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+    sqlite3_exec(database, "COMMIT;", nullptr, nullptr, nullptr);
+    return true;
+}
+
+std::map<std::string, db::RoomBookings> db::get_room_bookings(sqlite3* database) {
+    std::map<std::string, RoomBookings> rooms;
+    sqlite3_stmt* stmt;
+
+    if (sqlite3_prepare_v2(database, "SELECT room, fetched_at FROM room_fetches;", -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[!] sqlite: failed to prepare select statement: " << sqlite3_errmsg(database) << "\n";
+        return rooms;
+    }
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char* room = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        if (room) rooms[room].fetched_at = sqlite3_column_int64(stmt, 1);
+    }
+    sqlite3_finalize(stmt);
+
+    if (sqlite3_prepare_v2(database, "SELECT room, start, end FROM room_bookings;", -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[!] sqlite: failed to prepare select statement: " << sqlite3_errmsg(database) << "\n";
+        return rooms;
+    }
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char* room = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        if (room && rooms.count(room)) rooms[room].bookings.push_back({sqlite3_column_int64(stmt, 1), sqlite3_column_int64(stmt, 2)});
+    }
+    sqlite3_finalize(stmt);
+
+    std::cout << "[~] sqlite: retrieved cached bookings for " << rooms.size() << " room(s).\n";
+    return rooms;
 }
