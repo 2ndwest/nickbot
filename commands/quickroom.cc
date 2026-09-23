@@ -35,7 +35,6 @@ std::string commands::format_free_rooms(std::vector<room_schedule::free_room> ro
 
     std::string response = header;
     bool in_later_section = false;
-    bool any_warnings = false;
     size_t shown = 0;
 
     for (const auto& room : rooms) {
@@ -45,16 +44,10 @@ std::string commands::format_free_rooms(std::vector<room_schedule::free_room> ro
             line += "**Opening up later:**\n";
         }
         line += "├ **" + room.room + "** — " + utils::format_time_et(room.begin) + " → " +
-            (room.until_end_of_day ? "end of day" : utils::format_time_et(room.end));
-        if (!room.hydrant_conflicts.empty()) {
-            line += " ⚠️ Hydrant:";
-            for (size_t i = 0; i < room.hydrant_conflicts.size(); i++) line += (i ? ", " : " ") + room.hydrant_conflicts[i];
-        }
-        line += "\n";
+            (room.until_end_of_day ? "end of day" : utils::format_time_et(room.end)) + "\n";
 
         if (response.size() + line.size() > MAX_MESSAGE_LENGTH) break;
         response += line;
-        any_warnings |= !room.hydrant_conflicts.empty();
         shown++;
     }
 
@@ -62,9 +55,7 @@ std::string commands::format_free_rooms(std::vector<room_schedule::free_room> ro
         response += "├ *...and " + std::to_string(rooms.size() - shown) + " more*\n";
     }
 
-    response += "-# Sourced from [MIT room bookings](https://classrooms.mit.edu/classrooms/) and [Hydrant](https://hydrant.mit.edu), refreshed hourly. Not every room is unlocked.";
-    if (any_warnings) response += " ⚠️ = Hydrant lists a class the room bookings don't.";
-    response += "\n";
+    response += "-# Sourced from [MIT room bookings](https://classrooms.mit.edu/classrooms/) and [Hydrant](https://hydrant.mit.edu), refreshed hourly. Not every room is unlocked.\n";
     return response;
 }
 

@@ -42,7 +42,6 @@ constexpr int HYDRANT_FIRST_SLOT_MINUTE = 6 * 60;
 
 // A weekly class meeting from Hydrant.
 struct hydrant_meeting {
-    std::string class_number; // e.g. "11.220".
     int weekday;              // 0 = Monday ... 4 = Friday.
     int start_minute;         // Minutes past midnight ET.
     int end_minute;
@@ -110,7 +109,7 @@ bool load_hydrant() {
         for (const auto& day : info["holidayDates"].getArray()) new_term.holidays.insert(day.getString());
         std::string year = new_term.start.substr(0, 4);
 
-        for (auto& [number, cls] : json["classes"].getObject()) {
+        for (auto& [_, cls] : json["classes"].getObject()) {
             std::string first_day = new_term.start, last_day = new_term.end;
 
             // Half-term classes meet in only one half of the term.
@@ -139,7 +138,6 @@ bool load_hydrant() {
                         int slot = (int)time[0].getLong(), length = (int)time[1].getLong();
                         int start_minute = HYDRANT_FIRST_SLOT_MINUTE + (slot % HYDRANT_SLOTS_PER_DAY) * 30;
                         new_meetings[room].push_back({
-                            number,
                             slot / HYDRANT_SLOTS_PER_DAY,
                             start_minute,
                             start_minute + length * 30,
@@ -317,23 +315,21 @@ std::optional<std::vector<room_schedule::free_room>> room_schedule::find_free_ro
         if (!is_tracked(room) || now - fetched.fetched_at > MAX_STALENESS) continue;
         any_fresh = true;
 
-        auto window = first_free_window(fetched.bookings, now, day_end);
-        if (!window) continue;
-        auto [begin, end] = *window;
-
-        std::vector<std::string> conflicts;
+        // A room is busy whenever either source says so: roomBookings misses some classes (mostly in
+        // departmental rooms) that Hydrant knows about.
+        std::vector<std::pair<time_t, time_t>> busy = fetched.bookings;
         auto meetings = hydrant_meetings.find(room);
         if (classes_today && meetings != hydrant_meetings.end()) {
             for (const auto& meeting : meetings->second) {
                 if (meeting.weekday != weekday || today < meeting.first_day || today > meeting.last_day) continue;
-                time_t start = utils::at_minute_et(now, meeting.start_minute);
-                if (start >= end || utils::at_minute_et(now, meeting.end_minute) <= begin) continue;
-                std::string conflict = meeting.class_number + " at " + utils::format_time_et(start);
-                if (std::find(conflicts.begin(), conflicts.end(), conflict) == conflicts.end()) conflicts.push_back(conflict);
+                busy.push_back({utils::at_minute_et(now, meeting.start_minute), utils::at_minute_et(now, meeting.end_minute)});
             }
         }
 
-        rooms.push_back({room, graph_building(building_of(room)), begin, end, end == day_end, conflicts});
+        auto window = first_free_window(busy, now, day_end);
+        if (!window) continue;
+        auto [begin, end] = *window;
+        rooms.push_back({room, graph_building(building_of(room)), begin, end, end == day_end});
     }
 
     if (!any_fresh) return std::nullopt;

@@ -11,8 +11,8 @@
 //
 // Two sources are combined:
 //   - classrooms.mit.edu roomBookings: authoritative, re-fetched for every room about once an hour.
-//   - Hydrant's class schedule: loaded once on startup. Some classes (e.g. recitations in departmental
-//     rooms) are missing from roomBookings, so a Hydrant class inside a free window is flagged as a warning.
+//   - Hydrant's class schedule: loaded once on startup. Some classes (mostly in departmental rooms) are
+//     missing from roomBookings, so a room counts as busy whenever either source says it is.
 namespace room_schedule {
 
 // A window during which a room has no bookings.
@@ -22,8 +22,6 @@ struct free_room {
     time_t begin;          // Start of the free window (unix timestamp).
     time_t end;            // End of the free window (unix timestamp).
     bool until_end_of_day; // No more bookings today; `end` is midnight.
-    // Hydrant classes meeting during the window that roomBookings doesn't know about, e.g. "11.220 at 01:00 PM".
-    std::vector<std::string> hydrant_conflicts;
 };
 
 // Loads cached bookings from the database, then starts a background thread that loads Hydrant and
