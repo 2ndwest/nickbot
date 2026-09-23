@@ -60,7 +60,7 @@ hydrant_term term;
 std::map<std::string, std::vector<hydrant_meeting>> hydrant_meetings; // Keyed by room number.
 bool refresh_requested = false;
 std::condition_variable wake;
-room_schedule::sweep_status progress{false, false, 0, mit_rooms::rooms.size(), 0};
+room_schedule::sweep_status progress{false, 0, mit_rooms::rooms.size()};
 
 // "W41-1119" -> "W41".
 std::string building_of(const std::string& room) {
@@ -191,7 +191,6 @@ void sweep(sqlite3* database, const std::function<void(const std::string&)>& on_
     {
         std::lock_guard lock(mutex);
         progress.running = true;
-        progress.auth_failed = false;
         progress.done = 0;
     }
 
@@ -208,7 +207,6 @@ void sweep(sqlite3* database, const std::function<void(const std::string&)>& on_
             alerted = true;
             std::lock_guard lock(mutex);
             progress.running = false;
-            progress.auth_failed = true;
             return;
         }
         alerted = false;
@@ -226,7 +224,6 @@ void sweep(sqlite3* database, const std::function<void(const std::string&)>& on_
     {
         std::lock_guard lock(mutex);
         progress.running = false;
-        progress.finished_at = time(nullptr);
     }
 
     std::cout << "[*] Refreshed room bookings for " << fetched << "/" << mit_rooms::rooms.size() << " rooms.\n";

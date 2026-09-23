@@ -20,15 +20,6 @@ inline std::string uppercase(std::string s) {
     return s;
 }
 
-// Get current local time formatted as "HH:MM:SS AM/PM".
-inline std::string current_time() {
-    time_t now = time(nullptr);
-    struct tm* local_tm = localtime(&now);
-    char buf[32];
-    strftime(buf, sizeof(buf), "%I:%M:%S %p", local_tm);
-    return buf;
-}
-
 // Point the process timezone at ET. Every *_et helper below relies on this. main() calls it before
 // starting any threads, since setenv() racing with localtime_r() on other threads isn't safe.
 inline void use_et() {
