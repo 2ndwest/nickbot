@@ -86,12 +86,20 @@ int main() {
         if (dpp::run_once<struct register_bot_commands>()) {
             std::cout << "[!] Connected to Discord.\n";
 
-            // set presence to show last restarted time
-            bot.set_presence(dpp::presence(
-                dpp::presence_status::ps_online,
-                dpp::activity_type::at_custom,
-                "last restarted: " + utils::current_time()
-            ));
+            // set presence to show last restarted time and room bookings sweep progress. polled on a timer
+            // rather than pushed per room, since discord rate limits presence updates
+            auto update_presence = [&bot, restarted = "last restarted: " + utils::current_time(), last = std::make_shared<std::string>()] {
+                auto sweep = room_schedule::get_sweep_status();
+                std::string text = restarted + " · rooms " + std::to_string(sweep.done) + "/" + std::to_string(sweep.total);
+                if (sweep.auth_failed) text += " (needs reauth)";
+                else if (!sweep.running && sweep.finished_at) text += " (synced " + utils::format_time_et(sweep.finished_at) + ")";
+
+                if (text == *last) return;
+                *last = text;
+                bot.set_presence(dpp::presence(dpp::presence_status::ps_online, dpp::activity_type::at_custom, text));
+            };
+            update_presence();
+            bot.start_timer([update_presence](dpp::timer) { update_presence(); }, 30);
 
             // workrequest command
             dpp::slashcommand workrequest_cmd(

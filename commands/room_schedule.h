@@ -34,6 +34,16 @@ void start(std::function<void(const std::string&)> on_auth_failure);
 // Wakes the background thread to start a new sweep now, e.g. after a successful reauth.
 void refresh_now();
 
+// Progress of the current (or most recent) sweep over every room's bookings.
+struct sweep_status {
+    bool running;       // A sweep is in progress.
+    bool auth_failed;   // The most recent sweep stopped early on a Touchstone failure.
+    size_t done;        // Rooms the current (or most recent) sweep has gotten through.
+    size_t total;       // Rooms a sweep covers.
+    time_t finished_at; // When the last complete sweep finished (0 if none has yet).
+};
+sweep_status get_sweep_status();
+
 // Every room free now or opening up soon, or std::nullopt if no recent bookings are available
 // (the bot just started with an empty cache, or fetching has been failing for a while).
 std::optional<std::vector<free_room>> find_free_rooms(time_t now);

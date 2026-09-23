@@ -63,6 +63,7 @@ hydrant_term term;
 std::map<std::string, std::vector<hydrant_meeting>> hydrant_meetings; // Keyed by room number.
 bool refresh_requested = false;
 std::condition_variable wake;
+room_schedule::sweep_status progress{};
 
 // Rooms from mit_rooms.h that aren't blocklisted.
 const std::vector<std::string>& tracked_rooms() {
@@ -209,6 +210,10 @@ std::optional<db::RoomBookings> fetch_room(const std::string& room, std::string&
 void sweep(sqlite3* database, const std::function<void(const std::string&)>& on_auth_failure, bool& alerted) {
     std::cout << "[?] Refreshing room bookings for " << tracked_rooms().size() << " rooms...\n";
     size_t fetched = 0;
+    {
+        std::lock_guard lock(mutex);
+        progress = {true, false, 0, tracked_rooms().size(), progress.finished_at};
+    }
 
     for (const auto& room : tracked_rooms()) {
         std::string auth_error;
@@ -218,17 +223,27 @@ void sweep(sqlite3* database, const std::function<void(const std::string&)>& on_
             std::cout << "[!] Touchstone auth failed while refreshing room bookings: " << auth_error << "\n";
             if (!alerted) on_auth_failure(auth_error);
             alerted = true;
+            std::lock_guard lock(mutex);
+            progress.running = false;
+            progress.auth_failed = true;
             return;
         }
         alerted = false;
 
-        if (result) {
-            if (database) db::replace_room_bookings(database, room, *result);
+        if (result && database) db::replace_room_bookings(database, room, *result);
+        {
             std::lock_guard lock(mutex);
-            bookings[room] = std::move(*result);
-            fetched++;
+            if (result) bookings[room] = std::move(*result);
+            progress.done++;
         }
+        fetched += result.has_value();
         std::this_thread::sleep_for(REQUEST_INTERVAL);
+    }
+
+    {
+        std::lock_guard lock(mutex);
+        progress.running = false;
+        progress.finished_at = time(nullptr);
     }
 
     std::cout << "[*] Refreshed room bookings for " << fetched << "/" << tracked_rooms().size() << " rooms.\n";
@@ -257,6 +272,10 @@ void room_schedule::start(std::function<void(const std::string&)> on_auth_failur
         std::lock_guard lock(mutex);
         bookings = std::move(cached);
     }
+    {
+        std::lock_guard lock(mutex);
+        progress.total = tracked_rooms().size();
+    }
 
     std::thread([database, on_auth_failure = std::move(on_auth_failure)] {
         bool alerted = false; // Whether on_auth_failure was already called for the current failure streak.
@@ -277,6 +296,11 @@ void room_schedule::refresh_now() {
     std::lock_guard lock(mutex);
     refresh_requested = true;
     wake.notify_one();
+}
+
+room_schedule::sweep_status room_schedule::get_sweep_status() {
+    std::lock_guard lock(mutex);
+    return progress;
 }
 
 std::optional<std::vector<room_schedule::free_room>> room_schedule::find_free_rooms(time_t now) {
