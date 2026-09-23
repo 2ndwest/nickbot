@@ -7,6 +7,7 @@
 #include "utils.h"
 
 int main() {
+    utils::use_et();
     if (!config::token() ||
         !config::kerb() ||
         !config::kerb_password() ||
@@ -47,28 +48,30 @@ int main() {
             std::cout << "[~] Reauth button clicked, authenticating to Atlas...\n";
             event.reply("Sending a 2FA prompt to your device...");
 
-            cpr::Session s = libtouchstone::session(config::cookiefile());
-            cpr::Response r = libtouchstone::authenticate(s,
-                "https://atlas.mit.edu",
-                config::kerb(), config::kerb_password(),
-                // block = true is critical, otherwise we can't do the 2FA prompt
-                {config::cookiefile(), true, true}
-            );
+            int submitted_reqs = 0, initial_pending_reqs = 0;
+            {
+                cpr::Session s = libtouchstone::session(config::cookiefile());
+                cpr::Response r = libtouchstone::authenticate(s,
+                    "https://atlas.mit.edu",
+                    config::kerb(), config::kerb_password(),
+                    // block = true is critical, otherwise we can't do the 2FA prompt
+                    {config::cookiefile(), true, true}
+                );
 
-            if (r.error) {
-                std::cout << "[!] Touchstone reauth failed: " << r.error.message << "\n";
-                event.edit_response("Reauth failed: " + r.error.message);
-                return;
+                if (r.error) {
+                    std::cout << "[!] Touchstone reauth failed: " << r.error.message << "\n";
+                    event.edit_response("Reauth failed: " + r.error.message);
+                    return;
+                }
+
+                std::cout << "[*] Touchstone reauth succeeded. Handling any unfinished business...\n";
+
+                // submit any pending work requests that were stalled due to touchstone auth previously
+                std::tie(submitted_reqs, initial_pending_reqs) = commands::submit_pending_work_requests_to_atlas(database, s);
             }
 
-            std::cout << "[*] Touchstone reauth succeeded. Handling any unfinished business...\n";
-
-            // submit any pending work requests that were stalled due to touchstone auth previously
-            auto [submitted_reqs, initial_pending_reqs] = commands::submit_pending_work_requests_to_atlas(database, s);
-
-            // resume refreshing room bookings, which stops at the first auth failure. curl only writes the
-            // cookie jar when a session is destroyed, so flush it first or the refresh would read stale cookies
-            curl_easy_setopt(s.GetCurlHolder()->handle, CURLOPT_COOKIELIST, "FLUSH");
+            // resume refreshing room bookings, which stops at the first auth failure. only after the session above
+            // is destroyed, since that's when curl writes the fresh cookies to the cookie jar the refresh reads
             room_schedule::refresh_now();
 
             event.edit_response(

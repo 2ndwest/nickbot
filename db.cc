@@ -188,7 +188,8 @@ std::map<std::string, db::RoomBookings> db::get_room_bookings(sqlite3* database)
     }
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         const char* room = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        if (room && rooms.count(room)) rooms[room].bookings.push_back({sqlite3_column_int64(stmt, 1), sqlite3_column_int64(stmt, 2)});
+        auto it = room ? rooms.find(room) : rooms.end();
+        if (it != rooms.end()) it->second.bookings.push_back({sqlite3_column_int64(stmt, 1), sqlite3_column_int64(stmt, 2)});
     }
     sqlite3_finalize(stmt);
 

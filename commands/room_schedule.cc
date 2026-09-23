@@ -56,28 +56,18 @@ struct hydrant_term {
 
 std::mutex mutex; // Guards everything below.
 std::map<std::string, db::RoomBookings> bookings; // Keyed by room number.
-bool hydrant_loaded = false;
 hydrant_term term;
 std::map<std::string, std::vector<hydrant_meeting>> hydrant_meetings; // Keyed by room number.
 bool refresh_requested = false;
 std::condition_variable wake;
-room_schedule::sweep_status progress{};
-
-const std::vector<std::string>& tracked_rooms() {
-    return mit_rooms::rooms;
-}
-
-bool is_tracked(const std::string& room) {
-    static const std::set<std::string> rooms(tracked_rooms().begin(), tracked_rooms().end());
-    return rooms.count(room);
-}
+room_schedule::sweep_status progress{false, false, 0, mit_rooms::rooms.size(), 0};
 
 // "W41-1119" -> "W41".
 std::string building_of(const std::string& room) {
     return utils::uppercase(room.substr(0, room.find('-')));
 }
 
-// Fetches Hydrant's class schedule and indexes the meetings of every tracked room.
+// Fetches Hydrant's class schedule and indexes the meetings in every room.
 bool load_hydrant() {
     std::cout << "[?] Fetching Hydrant class schedule...\n";
     cpr::Response r = cpr::Get(cpr::Url{"https://hydrant.mit.edu/latest.json"}, cpr::Timeout{std::chrono::seconds(60)});
@@ -126,7 +116,6 @@ bool load_hydrant() {
                 // Each section is [[[slot, slot count], ...], room].
                 for (const auto& section : cls[kind].getArray()) {
                     std::string room = utils::uppercase(section[1].getString());
-                    if (!is_tracked(room)) continue;
                     for (const auto& time : section[0].getArray()) {
                         int slot = (int)time[0].getLong(), length = (int)time[1].getLong();
                         int start_minute = HYDRANT_FIRST_SLOT_MINUTE + (slot % HYDRANT_SLOTS_PER_DAY) * 30;
@@ -150,18 +139,16 @@ bool load_hydrant() {
     std::lock_guard lock(mutex);
     term = std::move(new_term);
     hydrant_meetings = std::move(new_meetings);
-    hydrant_loaded = true;
     return true;
 }
 
 // Fetches a room's bookings for today and tomorrow from classrooms.mit.edu. Returns std::nullopt on
 // failure, additionally setting auth_error if the failure was Touchstone's.
-std::optional<db::RoomBookings> fetch_room(const std::string& room, std::string& auth_error) {
+std::optional<db::RoomBookings> fetch_room(cpr::Session& s, const std::string& room, std::string& auth_error) {
     time_t now = time(nullptr);
     std::string url = "https://classrooms.mit.edu/classrooms/roomBookings?roomNumber=" + room +
         "&startDate=" + utils::date_et(now) + "&endDate=" + utils::date_et(utils::at_minute_et(now, 0, 1));
 
-    cpr::Session s = libtouchstone::session(config::cookiefile());
     cpr::Response r = libtouchstone::authenticate(s, url.c_str(),
         config::kerb(), config::kerb_password(),
         // block = false is critical, we don't want to be stuck waiting for a 2FA prompt
@@ -199,16 +186,21 @@ std::optional<db::RoomBookings> fetch_room(const std::string& room, std::string&
 
 // Re-fetches every tracked room's bookings, slowly. Gives up at the first Touchstone failure.
 void sweep(sqlite3* database, const std::function<void(const std::string&)>& on_auth_failure, bool& alerted) {
-    std::cout << "[?] Refreshing room bookings for " << tracked_rooms().size() << " rooms...\n";
+    std::cout << "[?] Refreshing room bookings for " << mit_rooms::rooms.size() << " rooms...\n";
     size_t fetched = 0;
     {
         std::lock_guard lock(mutex);
-        progress = {true, false, 0, tracked_rooms().size(), progress.finished_at};
+        progress.running = true;
+        progress.auth_failed = false;
+        progress.done = 0;
     }
 
-    for (const auto& room : tracked_rooms()) {
+    // One session for the whole sweep keeps the connection alive between requests. It writes the cookie
+    // jar when destroyed, at the end of the sweep.
+    cpr::Session s = libtouchstone::session(config::cookiefile());
+    for (const auto& room : mit_rooms::rooms) {
         std::string auth_error;
-        auto result = fetch_room(room, auth_error);
+        auto result = fetch_room(s, room, auth_error);
 
         if (!auth_error.empty()) {
             std::cout << "[!] Touchstone auth failed while refreshing room bookings: " << auth_error << "\n";
@@ -237,7 +229,7 @@ void sweep(sqlite3* database, const std::function<void(const std::string&)>& on_
         progress.finished_at = time(nullptr);
     }
 
-    std::cout << "[*] Refreshed room bookings for " << fetched << "/" << tracked_rooms().size() << " rooms.\n";
+    std::cout << "[*] Refreshed room bookings for " << fetched << "/" << mit_rooms::rooms.size() << " rooms.\n";
 }
 
 // Earliest free window of at least MIN_FREE that starts within LOOKAHEAD of now, capped at day_end.
@@ -260,18 +252,18 @@ void room_schedule::start(std::function<void(const std::string&)> on_auth_failur
     sqlite3* database = db::init();
     if (database) {
         auto cached = db::get_room_bookings(database);
+        // Drop rooms cached before they were removed from mit_rooms.h.
+        std::set<std::string> tracked(mit_rooms::rooms.begin(), mit_rooms::rooms.end());
+        for (auto it = cached.begin(); it != cached.end();) it = tracked.count(it->first) ? std::next(it) : cached.erase(it);
         std::lock_guard lock(mutex);
         bookings = std::move(cached);
-    }
-    {
-        std::lock_guard lock(mutex);
-        progress.total = tracked_rooms().size();
     }
 
     std::thread([database, on_auth_failure = std::move(on_auth_failure)] {
         bool alerted = false; // Whether on_auth_failure was already called for the current failure streak.
+        bool hydrant_loaded = false;
         for (;;) {
-            if (!hydrant_loaded) load_hydrant();
+            if (!hydrant_loaded) hydrant_loaded = load_hydrant();
 
             auto next_sweep = std::chrono::steady_clock::now() + SWEEP_INTERVAL;
             sweep(database, on_auth_failure, alerted);
@@ -299,13 +291,14 @@ std::optional<std::vector<room_schedule::free_room>> room_schedule::find_free_ro
 
     std::string today = utils::date_et(now);
     time_t day_end = utils::at_minute_et(now, 0, 1);
+    time_t midnight = utils::at_minute_et(now, 0);
     int weekday = today == term.monday_schedule ? 0 : utils::weekday_et(now);
-    bool classes_today = hydrant_loaded && today >= term.start && today <= term.end && !term.holidays.count(today);
+    bool classes_today = !term.holidays.count(today); // Term bounds are checked per meeting.
 
     std::vector<free_room> rooms;
     bool any_fresh = false;
     for (const auto& [room, fetched] : bookings) {
-        if (!is_tracked(room) || now - fetched.fetched_at > MAX_STALENESS) continue;
+        if (now - fetched.fetched_at > MAX_STALENESS) continue;
         any_fresh = true;
 
         // A room is busy whenever either source says so: roomBookings misses some classes (mostly in
@@ -315,7 +308,8 @@ std::optional<std::vector<room_schedule::free_room>> room_schedule::find_free_ro
         if (classes_today && meetings != hydrant_meetings.end()) {
             for (const auto& meeting : meetings->second) {
                 if (meeting.weekday != weekday || today < meeting.first_day || today > meeting.last_day) continue;
-                busy.push_back({utils::at_minute_et(now, meeting.start_minute), utils::at_minute_et(now, meeting.end_minute)});
+                // Classes only meet on weekdays, so no DST switch (2 AM Sunday) falls between midnight and a meeting.
+                busy.push_back({midnight + meeting.start_minute * 60, midnight + meeting.end_minute * 60});
             }
         }
 
@@ -340,7 +334,7 @@ std::string room_schedule::graph_building(const std::string& building) {
 bool room_schedule::has_rooms_in(const std::string& building) {
     static const std::set<std::string> buildings = [] {
         std::set<std::string> out;
-        for (const auto& room : tracked_rooms()) out.insert(graph_building(building_of(room)));
+        for (const auto& room : mit_rooms::rooms) out.insert(graph_building(building_of(room)));
         return out;
     }();
     return buildings.count(building);

@@ -8,11 +8,17 @@ static constexpr time_t STARTS_LATER_THRESHOLD = 5 * 60;
 // Discord message length limit (with some headroom).
 static constexpr size_t MAX_MESSAGE_LENGTH = 1900;
 
-std::optional<std::vector<room_schedule::free_room>> commands::find_free_rooms(const dpp::slashcommand_t& event) {
+std::optional<std::vector<room_schedule::free_room>> commands::find_free_rooms(const dpp::slashcommand_t& event,
+                                                                               const std::map<std::string, int>& buildings) {
     auto rooms = room_schedule::find_free_rooms(time(nullptr));
     if (!rooms) {
         event.reply("**Room schedules aren't loaded yet.** The bot may have just restarted, or Touchstone may need reauthentication. Try again in a few minutes.");
+        return std::nullopt;
     }
+    rooms->erase(
+        std::remove_if(rooms->begin(), rooms->end(), [&](const room_schedule::free_room& room) { return !buildings.count(room.building); }),
+        rooms->end()
+    );
     return rooms;
 }
 
@@ -63,17 +69,12 @@ void commands::quickroom(const dpp::slashcommand_t& event) {
     std::string building_query = std::get<std::string>(event.get_parameter("building"));
     std::string building = room_schedule::graph_building(utils::uppercase(building_query));
 
-    auto rooms = find_free_rooms(event);
+    auto rooms = find_free_rooms(event, {{building, 0}});
     if (!rooms) return;
-
-    rooms->erase(
-        std::remove_if(rooms->begin(), rooms->end(), [&](const room_schedule::free_room& room) { return room.building != building; }),
-        rooms->end()
-    );
 
     if (rooms->empty()) {
         event.reply("No available rooms found in building **" + building_query + "**.");
     } else {
-        event.reply(format_free_rooms(*rooms, "**Available rooms in building " + building_query + "**:\n"));
+        event.reply(format_free_rooms(std::move(*rooms), "**Available rooms in building " + building_query + "**:\n"));
     }
 }
