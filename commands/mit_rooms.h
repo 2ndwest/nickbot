@@ -85,5 +85,19 @@ inline const std::vector<std::string> rooms = {
 //   W41-4519
 // ALTER/CONVERSION (under renovation)
 //   W41-3511
+//
+// W41 rooms that were never on the list, per the same room list. Everything else in W41 not
+// mentioned here is an office, lab, support space, or circulation.
+// STUDIO
+//   W41-1502, W41-1506, W41-1517, W41-3118, W41-4509, W41-5118, W41-5305, W41-5403
+// CONFERENCE ROOM (no classes or bookings)
+//   W41-3403, W41-5214 (locked, checked in person)
+//   W41-3505, W41-3527 (not checked, presumably locked too)
+// LOUNGE, MULTI-PURPOSE RM (no classes or bookings)
+//   W41-1106, W41-3406, W41-5106, W41-5303
+// EXHIBITION FACIL
+//   W41-1113, W41-3304
+// CLASSROOM SVC (support rooms attached to classrooms)
+//   W41-1207, W41-2318, W41-3111, W41-3203, W41-3508, W41-4404, W41-4419A, W41-4420
 
 } // namespace mit_rooms
