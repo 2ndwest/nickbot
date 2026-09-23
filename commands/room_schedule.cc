@@ -17,7 +17,6 @@
 #include "utils.h"
 #include "mit_buildings.h"
 #include "mit_rooms.h"
-#include "room_blocklist.h"
 
 namespace {
 
@@ -64,14 +63,8 @@ bool refresh_requested = false;
 std::condition_variable wake;
 room_schedule::sweep_status progress{};
 
-// Rooms from mit_rooms.h that aren't blocklisted.
 const std::vector<std::string>& tracked_rooms() {
-    static const std::vector<std::string> rooms = [] {
-        std::vector<std::string> out;
-        for (const auto& room : mit_rooms::rooms) if (!room_blocklist::rooms.count(room)) out.push_back(room);
-        return out;
-    }();
-    return rooms;
+    return mit_rooms::rooms;
 }
 
 bool is_tracked(const std::string& room) {
