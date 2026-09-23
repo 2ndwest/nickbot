@@ -44,6 +44,16 @@ sweep_status get_sweep_status();
 // (the bot just started with an empty cache, or fetching has been failing for a while).
 std::optional<std::vector<free_room>> find_free_rooms(time_t now);
 
+// A room's open (unbooked) windows over today and tomorrow, as pushed to wokenet.
+struct room_open_times {
+    std::string room;     // Room number, e.g. "W41-1119".
+    std::string building; // Building on the building graph, e.g. "W41".
+    std::vector<std::pair<time_t, time_t>> open; // (start, end) unix timestamps, sorted.
+};
+
+// Open windows for every room with fresh bookings, from midnight today (ET) to midnight after tomorrow.
+std::vector<room_open_times> open_times(time_t now);
+
 // Maps a room number's building ("14N", "W41") onto a building in mit_buildings.h where possible
 // ("14", "W41"). Buildings the graph doesn't know are returned unchanged.
 std::string graph_building(const std::string& building);

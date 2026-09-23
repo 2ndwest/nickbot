@@ -229,17 +229,75 @@ void sweep(sqlite3* database, const std::function<void(const std::string&)>& on_
     std::cout << "[*] Refreshed room bookings for " << fetched << "/" << mit_rooms::rooms.size() << " rooms.\n";
 }
 
-// Earliest free window of at least MIN_FREE that starts within LOOKAHEAD of now, capped at day_end.
-std::optional<std::pair<time_t, time_t>> first_free_window(std::vector<std::pair<time_t, time_t>> busy, time_t now, time_t day_end) {
+using interval = std::pair<time_t, time_t>;
+
+// Every gap between `busy` intervals within [from, to).
+std::vector<interval> free_intervals(std::vector<interval> busy, time_t from, time_t to) {
     std::sort(busy.begin(), busy.end());
-    time_t begin = now;
+    std::vector<interval> free;
+    time_t begin = from;
     for (const auto& [start, end] : busy) {
-        if (begin >= now + LOOKAHEAD || begin >= day_end) return std::nullopt;
-        if (start > begin && std::min(start, day_end) - begin >= MIN_FREE) return std::make_pair(begin, std::min(start, day_end));
+        if (begin >= to) break;
+        if (start > begin) free.push_back({begin, std::min(start, to)});
         begin = std::max(begin, end);
     }
-    if (begin < now + LOOKAHEAD && day_end - begin >= MIN_FREE) return std::make_pair(begin, day_end);
-    return std::nullopt;
+    if (begin < to) free.push_back({begin, to});
+    return free;
+}
+
+// A room's busy time on the ET day starting at `day_start`. It's busy whenever either source says so:
+// roomBookings misses some classes (mostly in departmental rooms) that Hydrant knows about. Caller holds `mutex`.
+std::vector<interval> busy_on_day(const std::string& room, const db::RoomBookings& fetched, time_t day_start) {
+    std::vector<interval> busy = fetched.bookings;
+    std::string day = utils::date_et(day_start);
+    int weekday = day == term.monday_schedule ? 0 : utils::weekday_et(day_start);
+    auto meetings = hydrant_meetings.find(room);
+    if (term.holidays.count(day) || meetings == hydrant_meetings.end()) return busy;
+
+    for (const auto& meeting : meetings->second) {
+        // Term bounds are checked per meeting, since first_day/last_day start out as the term's.
+        if (meeting.weekday != weekday || day < meeting.first_day || day > meeting.last_day) continue;
+        // Classes only meet on weekdays, so no DST switch (2 AM Sunday) falls between midnight and a meeting.
+        busy.push_back({day_start + meeting.start_minute * 60, day_start + meeting.end_minute * 60});
+    }
+    return busy;
+}
+
+// POSTs every room's open times to wokenet's Convex backend, if configured.
+void push_open_times() {
+    if (!config::convex_site_url() || !config::rooms_webhook_secret()) return;
+
+    auto rooms = room_schedule::open_times(time(nullptr));
+    if (rooms.empty()) return; // Nothing fresh; leave wokenet's last data (and its timestamps) in place.
+
+    // Shaped like {"rooms": [{"room": "W41-1119", "building": "W41", "open": [{"start": ms, "end": ms}, ...]}, ...]}.
+    jt::Json body;
+    body["rooms"].setArray();
+    for (const auto& room : rooms) {
+        jt::Json entry;
+        entry["room"] = room.room;
+        entry["building"] = room.building;
+        entry["open"].setArray();
+        for (const auto& [start, end] : room.open) {
+            jt::Json window;
+            window["start"] = (long long)start * 1000;
+            window["end"] = (long long)end * 1000;
+            entry["open"].getArray().push_back(std::move(window));
+        }
+        body["rooms"].getArray().push_back(std::move(entry));
+    }
+
+    cpr::Response r = cpr::Post(
+        cpr::Url{std::string(config::convex_site_url()) + "/ingest-room-availability"},
+        cpr::Header{{"Content-Type", "application/json"}, {"x-webhook-secret", config::rooms_webhook_secret()}},
+        cpr::Body{body.toString()},
+        cpr::Timeout{std::chrono::seconds(30)}
+    );
+    if (r.error || r.status_code != 200) {
+        std::cout << "[!] Failed to push room open times to wokenet (status " << r.status_code << "): " << (r.error ? r.error.message : r.text) << "\n";
+    } else {
+        std::cout << "[*] Pushed open times for " << rooms.size() << " rooms to wokenet.\n";
+    }
 }
 
 } // namespace
@@ -264,6 +322,7 @@ void room_schedule::start(std::function<void(const std::string&)> on_auth_failur
 
             auto next_sweep = std::chrono::steady_clock::now() + SWEEP_INTERVAL;
             sweep(database, on_auth_failure, alerted);
+            push_open_times();
 
             std::unique_lock lock(mutex);
             wake.wait_until(lock, next_sweep, [] { return refresh_requested; });
@@ -286,11 +345,8 @@ room_schedule::sweep_status room_schedule::get_sweep_status() {
 std::optional<std::vector<room_schedule::free_room>> room_schedule::find_free_rooms(time_t now) {
     std::lock_guard lock(mutex);
 
-    std::string today = utils::date_et(now);
-    time_t day_end = utils::at_minute_et(now, 0, 1);
     time_t midnight = utils::at_minute_et(now, 0);
-    int weekday = today == term.monday_schedule ? 0 : utils::weekday_et(now);
-    bool classes_today = !term.holidays.count(today); // Term bounds are checked per meeting.
+    time_t day_end = utils::at_minute_et(now, 0, 1);
 
     std::vector<free_room> rooms;
     bool any_fresh = false;
@@ -298,25 +354,37 @@ std::optional<std::vector<room_schedule::free_room>> room_schedule::find_free_ro
         if (now - fetched.fetched_at > MAX_STALENESS) continue;
         any_fresh = true;
 
-        // A room is busy whenever either source says so: roomBookings misses some classes (mostly in
-        // departmental rooms) that Hydrant knows about.
-        std::vector<std::pair<time_t, time_t>> busy = fetched.bookings;
-        auto meetings = hydrant_meetings.find(room);
-        if (classes_today && meetings != hydrant_meetings.end()) {
-            for (const auto& meeting : meetings->second) {
-                if (meeting.weekday != weekday || today < meeting.first_day || today > meeting.last_day) continue;
-                // Classes only meet on weekdays, so no DST switch (2 AM Sunday) falls between midnight and a meeting.
-                busy.push_back({midnight + meeting.start_minute * 60, midnight + meeting.end_minute * 60});
-            }
+        // The first window of at least MIN_FREE that starts within LOOKAHEAD of now.
+        for (const auto& [begin, end] : free_intervals(busy_on_day(room, fetched, midnight), now, day_end)) {
+            if (begin >= now + LOOKAHEAD) break;
+            if (end - begin < MIN_FREE) continue;
+            rooms.push_back({room, graph_building(building_of(room)), begin, end, end == day_end});
+            break;
         }
-
-        auto window = first_free_window(busy, now, day_end);
-        if (!window) continue;
-        auto [begin, end] = *window;
-        rooms.push_back({room, graph_building(building_of(room)), begin, end, end == day_end});
     }
 
     if (!any_fresh) return std::nullopt;
+    return rooms;
+}
+
+std::vector<room_schedule::room_open_times> room_schedule::open_times(time_t now) {
+    std::lock_guard lock(mutex);
+
+    std::vector<room_open_times> rooms;
+    for (const auto& [room, fetched] : bookings) {
+        if (now - fetched.fetched_at > MAX_STALENESS) continue;
+
+        room_open_times entry{room, graph_building(building_of(room)), {}};
+        for (int day = 0; day < 2; day++) {
+            time_t day_start = utils::at_minute_et(now, 0, day), day_end = utils::at_minute_et(now, 0, day + 1);
+            for (const auto& window : free_intervals(busy_on_day(room, fetched, day_start), day_start, day_end)) {
+                // Join windows that run across midnight.
+                if (!entry.open.empty() && entry.open.back().second == window.first) entry.open.back().second = window.second;
+                else entry.open.push_back(window);
+            }
+        }
+        rooms.push_back(std::move(entry));
+    }
     return rooms;
 }
 
