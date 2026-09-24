@@ -20,9 +20,7 @@
 
 namespace {
 
-// A room's bookings are re-fetched once they're this old. Fetch times are kept in SQLite, so restarting the bot
-// doesn't trigger a refresh, and a refresh interrupted by a restart picks up where it left off.
-constexpr time_t REFRESH_AFTER = 6 * 60 * 60;
+using room_schedule::REFRESH_AFTER;
 
 // Delay between roomBookings requests, so a refresh trickles out rather than hammering classrooms.mit.edu.
 constexpr auto REQUEST_INTERVAL = std::chrono::seconds(3);
@@ -449,6 +447,7 @@ std::vector<room_schedule::room_open_times> room_schedule::open_times(time_t now
     std::lock_guard lock(mutex);
 
     std::set<std::string> wanted(only.begin(), only.end());
+    time_t today = utils::at_minute_et(now, 0);
     std::vector<room_open_times> rooms;
     for (const auto& tracked : mit_rooms::rooms) {
         const std::string& room = tracked.number;
@@ -457,11 +456,9 @@ std::vector<room_schedule::room_open_times> room_schedule::open_times(time_t now
         if (it == bookings.end()) continue;
         const auto& fetched = it->second;
         // Days that haven't been fetched are left without open windows.
-        time_t today = utils::at_minute_et(now, 0);
-        time_t to = std::min(covered_until(fetched), utils::at_minute_et(now, 0, 2));
-
+        time_t covered = covered_until(fetched);
         room_open_times entry{room, graph_building(building_of(room)), tracked.capacity, fetched.fetched_at, {}};
-        if (today < to) entry.open = free_intervals(busy_between(room, fetched, today, to), today, to);
+        entry.open = free_intervals(busy_between(room, fetched, today, covered), today, covered);
         rooms.push_back(std::move(entry));
     }
     return rooms;

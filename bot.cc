@@ -28,7 +28,7 @@ int main() {
     dpp::cluster bot(config::token());
 
     room_schedule::start([&bot](const std::string& error_message) {
-        commands::alert_admin_touchstone_failure(bot, error_message, "the hourly room bookings refresh");
+        commands::alert_admin_touchstone_failure(bot, error_message, "the room bookings refresh");
     });
 
     bot.on_slashcommand([&bot, database](const dpp::slashcommand_t& event) {
@@ -127,6 +127,14 @@ int main() {
             );
             bot.global_command_create(workrequest_cmd);
 
+            // Shared by /quickroom and /quicknear.
+            dpp::command_option lecture_halls_option(
+                dpp::co_boolean,
+                "lecture_halls",
+                "Include lecture halls (" + std::to_string(room_schedule::LECTURE_HALL_SEATS) + "+ seats). Default true.",
+                false
+            );
+
             // quickroom command
             dpp::slashcommand quickroom_cmd(
                 "quickroom",
@@ -141,14 +149,7 @@ int main() {
                     true
                 )
             );
-            quickroom_cmd.add_option(
-                dpp::command_option(
-                    dpp::co_boolean,
-                    "lecture_halls",
-                    "Include lecture halls (" + std::to_string(room_schedule::LECTURE_HALL_SEATS) + "+ seats). Default true.",
-                    false
-                )
-            );
+            quickroom_cmd.add_option(lecture_halls_option);
             bot.global_command_create(quickroom_cmd);
 
             // quicknear command
@@ -173,14 +174,7 @@ int main() {
                     false
                 ).set_min_value(1).set_max_value(5)
             );
-            quicknear_cmd.add_option(
-                dpp::command_option(
-                    dpp::co_boolean,
-                    "lecture_halls",
-                    "Include lecture halls (" + std::to_string(room_schedule::LECTURE_HALL_SEATS) + "+ seats). Default true.",
-                    false
-                )
-            );
+            quicknear_cmd.add_option(lecture_halls_option);
             bot.global_command_create(quicknear_cmd);
 
             // list available commands

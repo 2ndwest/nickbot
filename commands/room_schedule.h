@@ -10,7 +10,7 @@
 // of any size in any building (QuickRoom itself only covers a small, curated set of rooms).
 //
 // Two sources are combined:
-//   - classrooms.mit.edu roomBookings: authoritative, re-fetched for each room once it's 6 hours old.
+//   - classrooms.mit.edu roomBookings: authoritative, re-fetched for each room once it's REFRESH_AFTER old.
 //   - Hydrant's class schedule: loaded once on startup. Some classes (mostly in departmental rooms) are
 //     missing from roomBookings, so a room counts as busy whenever either source says it is.
 namespace room_schedule {
@@ -18,9 +18,12 @@ namespace room_schedule {
 // Rooms with at least this many seats count as lecture halls, the same line wokenet draws.
 inline constexpr int LECTURE_HALL_SEATS = 60;
 
-// A room not refreshed in this long is flagged as stale, the same as on wokenet. Rooms are normally refreshed every
-// 6 hours, so this means a refresh was missed.
-inline constexpr time_t STALE_AFTER = 8 * 60 * 60;
+// A room's bookings are re-fetched once they're this old. Fetch times are kept in SQLite, so restarting the bot
+// doesn't trigger a refresh, and a refresh interrupted by a restart picks up where it left off.
+inline constexpr time_t REFRESH_AFTER = 6 * 60 * 60;
+
+// A room not refreshed in this long missed a refresh, and is flagged as stale (wokenet uses the same line).
+inline constexpr time_t STALE_AFTER = REFRESH_AFTER + 2 * 60 * 60;
 
 // A window during which a room has no bookings.
 struct free_room {
@@ -35,7 +38,7 @@ struct free_room {
 };
 
 // Loads cached bookings from the database, then starts a background thread that loads Hydrant and
-// re-fetches each room's bookings once they're 6 hours old. on_auth_failure is called with the error
+// re-fetches each room's bookings once they're REFRESH_AFTER old. on_auth_failure is called with the error
 // message when Touchstone auth fails (once per failure streak, not on every retry).
 void start(std::function<void(const std::string&)> on_auth_failure);
 

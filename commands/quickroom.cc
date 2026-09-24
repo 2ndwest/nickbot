@@ -53,7 +53,7 @@ std::string commands::format_free_rooms(std::vector<room_schedule::free_room> ro
     });
 
     std::string footer = "-# Sourced from [MIT room bookings](https://classrooms.mit.edu/classrooms/) and [Hydrant](https://hydrant.mit.edu), "
-        "refreshed every 6 hours. Not every room is unlocked.\n";
+        "refreshed every " + std::to_string(room_schedule::REFRESH_AFTER / (60 * 60)) + " hours. Not every room is unlocked.\n";
     if (size_t stale = room_schedule::stale_rooms(now)) {
         footer += "-# ⚠️ " + (stale == 1 ? std::string("1 room hasn't") : std::to_string(stale) + " rooms haven't") +
             " refreshed in over " + std::to_string(room_schedule::STALE_AFTER / (60 * 60)) + " hours.\n";
@@ -62,26 +62,23 @@ std::string commands::format_free_rooms(std::vector<room_schedule::free_room> ro
     // Headings only help when rooms could be from more than one building.
     bool by_building = distances.size() > 1;
     std::string response = header;
-    std::string building; // The building whose heading was listed last.
-    bool in_later_section = false;
     size_t shown = 0;
 
     for (const auto& room : rooms) {
+        const room_schedule::free_room* prev = shown ? &rooms[shown - 1] : nullptr;
         std::string name = "**" + room.room + "**" + (room.lecture_hall() ? " `LH`" : "");
         std::string line;
         if (starts_later(room)) {
-            if (!in_later_section) line += "**Opening up later:**\n";
+            if (!prev || !starts_later(*prev)) line += "**Opening up later:**\n";
             line += dot(room.end - room.begin) + " " + name + " — " + utils::format_until_et(room.begin, now) + " → " + utils::format_until_et(room.end, now) + "\n";
         } else {
-            if (by_building && room.building != building) line += "**Building " + room.building + "**\n";
+            if (by_building && (!prev || prev->building != room.building)) line += "**Building " + room.building + "**\n";
             line += dot(room.end - now) + " " + name + " — until " + utils::format_until_et(room.end, now) + " · " + utils::format_duration(room.end - now) + "\n";
         }
 
         if (response.size() + line.size() + footer.size() + MORE_LINE_LENGTH > MAX_MESSAGE_LENGTH) break;
         response += line;
         shown++;
-        in_later_section = starts_later(room);
-        building = room.building;
     }
 
     if (shown < rooms.size()) {

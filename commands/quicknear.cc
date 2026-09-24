@@ -17,7 +17,7 @@ void commands::quicknear(const dpp::slashcommand_t& event) {
         for (const auto& [name, _] : nearby) searched.push_back(name);
         std::sort(searched.begin(), searched.end(), [&](const std::string& a, const std::string& b) {
             if (nearby[a] != nearby[b]) return nearby[a] < nearby[b];
-            return a < b;
+            return utils::natural_less(a, b);
         });
         std::string searched_list;
         for (size_t i = 0; i < searched.size(); i++) searched_list += (i ? ", " : "") + searched[i];
