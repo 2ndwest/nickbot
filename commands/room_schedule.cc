@@ -197,7 +197,8 @@ void sweep(sqlite3* database, const std::function<void(const std::string&)>& on_
     // One session for the whole sweep keeps the connection alive between requests. It writes the cookie
     // jar when destroyed, at the end of the sweep.
     cpr::Session s = libtouchstone::session(config::cookiefile());
-    for (const auto& room : mit_rooms::rooms) {
+    for (const auto& tracked : mit_rooms::rooms) {
+        const std::string& room = tracked.number;
         std::string auth_error;
         auto result = fetch_room(s, room, auth_error);
 
@@ -265,18 +266,20 @@ std::vector<interval> busy_on_day(const std::string& room, const db::RoomBooking
 
 // POSTs every room's open times to wokenet's Convex backend, if configured.
 void push_open_times() {
-    if (!config::convex_site_url() || !config::rooms_webhook_secret()) return;
+    if (!config::convex_site_url() || !config::classrooms_webhook_secret()) return;
 
     auto rooms = room_schedule::open_times(time(nullptr));
     if (rooms.empty()) return; // Nothing fresh; leave wokenet's last data (and its timestamps) in place.
 
-    // Shaped like {"rooms": [{"room": "W41-1119", "building": "W41", "open": [{"start": ms, "end": ms}, ...]}, ...]}.
+    // Shaped like {"classrooms": [{"room": "W41-1119", "building": "W41", "capacity": 25, "open": [{"start": ms, "end": ms}, ...]}, ...]},
+    // with "capacity" left out when unknown.
     jt::Json body;
-    body["rooms"].setArray();
+    body["classrooms"].setArray();
     for (const auto& room : rooms) {
         jt::Json entry;
         entry["room"] = room.room;
         entry["building"] = room.building;
+        if (room.capacity) entry["capacity"] = *room.capacity;
         entry["open"].setArray();
         for (const auto& [start, end] : room.open) {
             jt::Json window;
@@ -284,12 +287,12 @@ void push_open_times() {
             window["end"] = (long long)end * 1000;
             entry["open"].getArray().push_back(std::move(window));
         }
-        body["rooms"].getArray().push_back(std::move(entry));
+        body["classrooms"].getArray().push_back(std::move(entry));
     }
 
     cpr::Response r = cpr::Post(
-        cpr::Url{std::string(config::convex_site_url()) + "/ingest-room-availability"},
-        cpr::Header{{"Content-Type", "application/json"}, {"x-webhook-secret", config::rooms_webhook_secret()}},
+        cpr::Url{std::string(config::convex_site_url()) + "/ingest-classroom-availability"},
+        cpr::Header{{"Content-Type", "application/json"}, {"x-webhook-secret", config::classrooms_webhook_secret()}},
         cpr::Body{body.toString()},
         cpr::Timeout{std::chrono::seconds(30)}
     );
@@ -308,7 +311,8 @@ void room_schedule::start(std::function<void(const std::string&)> on_auth_failur
     if (database) {
         auto cached = db::get_room_bookings(database);
         // Drop rooms cached before they were removed from mit_rooms.h.
-        std::set<std::string> tracked(mit_rooms::rooms.begin(), mit_rooms::rooms.end());
+        std::set<std::string> tracked;
+        for (const auto& room : mit_rooms::rooms) tracked.insert(room.number);
         for (auto it = cached.begin(); it != cached.end();) it = tracked.count(it->first) ? std::next(it) : cached.erase(it);
         std::lock_guard lock(mutex);
         bookings = std::move(cached);
@@ -371,10 +375,13 @@ std::vector<room_schedule::room_open_times> room_schedule::open_times(time_t now
     std::lock_guard lock(mutex);
 
     std::vector<room_open_times> rooms;
-    for (const auto& [room, fetched] : bookings) {
-        if (now - fetched.fetched_at > MAX_STALENESS) continue;
+    for (const auto& tracked : mit_rooms::rooms) {
+        const std::string& room = tracked.number;
+        auto it = bookings.find(room);
+        if (it == bookings.end() || now - it->second.fetched_at > MAX_STALENESS) continue;
+        const auto& fetched = it->second;
 
-        room_open_times entry{room, graph_building(building_of(room)), {}};
+        room_open_times entry{room, graph_building(building_of(room)), tracked.capacity, {}};
         for (int day = 0; day < 2; day++) {
             time_t day_start = utils::at_minute_et(now, 0, day), day_end = utils::at_minute_et(now, 0, day + 1);
             for (const auto& window : free_intervals(busy_on_day(room, fetched, day_start), day_start, day_end)) {
@@ -399,7 +406,7 @@ std::string room_schedule::graph_building(const std::string& building) {
 bool room_schedule::has_rooms_in(const std::string& building) {
     static const std::set<std::string> buildings = [] {
         std::set<std::string> out;
-        for (const auto& room : mit_rooms::rooms) out.insert(graph_building(building_of(room)));
+        for (const auto& room : mit_rooms::rooms) out.insert(graph_building(building_of(room.number)));
         return out;
     }();
     return buildings.count(building);

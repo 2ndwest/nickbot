@@ -48,6 +48,7 @@ std::optional<std::vector<free_room>> find_free_rooms(time_t now);
 struct room_open_times {
     std::string room;     // Room number, e.g. "W41-1119".
     std::string building; // Building on the building graph, e.g. "W41".
+    std::optional<int> capacity; // Seats, or std::nullopt if unknown (see mit_rooms.h).
     std::vector<std::pair<time_t, time_t>> open; // (start, end) unix timestamps, sorted.
 };
 
