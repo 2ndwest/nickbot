@@ -31,7 +31,7 @@ constexpr auto AUTH_RETRY_INTERVAL = std::chrono::hours(1);
 // The refresh thread never sleeps longer than this, so it rechecks wall-clock time after the machine sleeps.
 constexpr auto MAX_NAP = std::chrono::minutes(10);
 
-// Refreshed rooms are pushed to wokenet in batches of this many, so progress shows up as a refresh goes.
+// Refreshed rooms are pushed to wokenet in batches of this many, so they show up there as a refresh goes.
 constexpr size_t PUSH_BATCH = 25;
 
 // Only list rooms whose free window starts within this long from now...
@@ -65,7 +65,6 @@ hydrant_term term;
 std::map<std::string, std::vector<hydrant_meeting>> hydrant_meetings; // Keyed by room number.
 bool refresh_requested = false;
 std::condition_variable wake;
-room_schedule::sweep_status progress{false, 0, 0};
 
 // "W41-1119" -> "W41".
 std::string building_of(const std::string& room) {
@@ -301,10 +300,6 @@ bool refresh(sqlite3* database, const std::vector<std::string>& rooms, const std
              bool& alerted, std::map<std::string, time_t>& last_attempt) {
     std::cout << "[?] Refreshing room bookings for " << rooms.size() << " rooms...\n";
     size_t fetched = 0;
-    {
-        std::lock_guard lock(mutex);
-        progress = {true, 0, rooms.size()};
-    }
 
     // One session for the whole refresh keeps the connection alive between requests. It writes the cookie
     // jar when destroyed, at the end of the refresh.
@@ -318,10 +313,6 @@ bool refresh(sqlite3* database, const std::vector<std::string>& rooms, const std
             std::cout << "[!] Touchstone auth failed while refreshing room bookings: " << auth_error << "\n";
             if (!alerted) on_auth_failure(auth_error);
             alerted = true;
-            {
-                std::lock_guard lock(mutex);
-                progress.running = false;
-            }
             if (!unpushed.empty()) push_open_times(unpushed);
             return false;
         }
@@ -330,12 +321,11 @@ bool refresh(sqlite3* database, const std::vector<std::string>& rooms, const std
         last_attempt[room] = time(nullptr);
 
         if (result && database) db::replace_room_bookings(database, room, *result);
-        {
-            std::lock_guard lock(mutex);
-            if (result) bookings[room] = std::move(*result);
-            progress.done++;
-        }
         if (result) {
+            {
+                std::lock_guard lock(mutex);
+                bookings[room] = std::move(*result);
+            }
             fetched++;
             unpushed.push_back(room);
         }
@@ -346,11 +336,6 @@ bool refresh(sqlite3* database, const std::vector<std::string>& rooms, const std
         std::this_thread::sleep_for(REQUEST_INTERVAL);
     }
     if (!unpushed.empty()) push_open_times(unpushed);
-
-    {
-        std::lock_guard lock(mutex);
-        progress.running = false;
-    }
     std::cout << "[*] Refreshed room bookings for " << fetched << "/" << rooms.size() << " rooms.\n";
     return true;
 }
@@ -400,11 +385,6 @@ void room_schedule::refresh_now() {
     std::lock_guard lock(mutex);
     refresh_requested = true;
     wake.notify_one();
-}
-
-room_schedule::sweep_status room_schedule::get_sweep_status() {
-    std::lock_guard lock(mutex);
-    return progress;
 }
 
 std::optional<std::vector<room_schedule::free_room>> room_schedule::find_free_rooms(time_t now) {

@@ -45,14 +45,6 @@ void start(std::function<void(const std::string&)> on_auth_failure);
 // Wakes the background thread to refresh any stale rooms now, e.g. after a successful reauth.
 void refresh_now();
 
-// Progress of the current refresh of stale rooms' bookings.
-struct sweep_status {
-    bool running; // A refresh is in progress.
-    size_t done;  // Rooms the current refresh has gotten through.
-    size_t total; // Rooms the current refresh covers.
-};
-sweep_status get_sweep_status();
-
 // Every room free now or opening up soon, or std::nullopt if no room's fetched bookings cover today
 // (the bot just started with an empty cache, or fetching has been failing for a while).
 std::optional<std::vector<free_room>> find_free_rooms(time_t now);
