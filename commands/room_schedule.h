@@ -10,7 +10,7 @@
 // of any size in any building (QuickRoom itself only covers a small, curated set of rooms).
 //
 // Two sources are combined:
-//   - classrooms.mit.edu roomBookings: authoritative, re-fetched for every room about once an hour.
+//   - classrooms.mit.edu roomBookings: authoritative, re-fetched for each room once it's 6 hours old.
 //   - Hydrant's class schedule: loaded once on startup. Some classes (mostly in departmental rooms) are
 //     missing from roomBookings, so a room counts as busy whenever either source says it is.
 namespace room_schedule {
@@ -25,18 +25,18 @@ struct free_room {
 };
 
 // Loads cached bookings from the database, then starts a background thread that loads Hydrant and
-// re-fetches every room's bookings about once an hour. on_auth_failure is called with the error
-// message when Touchstone auth fails (once per failure streak, not on every sweep).
+// re-fetches each room's bookings once they're 6 hours old. on_auth_failure is called with the error
+// message when Touchstone auth fails (once per failure streak, not on every retry).
 void start(std::function<void(const std::string&)> on_auth_failure);
 
-// Wakes the background thread to start a new sweep now, e.g. after a successful reauth.
+// Wakes the background thread to refresh any stale rooms now, e.g. after a successful reauth.
 void refresh_now();
 
-// Progress of the current sweep over every room's bookings.
+// Progress of the current refresh of stale rooms' bookings.
 struct sweep_status {
-    bool running; // A sweep is in progress.
-    size_t done;  // Rooms the current sweep has gotten through.
-    size_t total; // Rooms a sweep covers.
+    bool running; // A refresh is in progress.
+    size_t done;  // Rooms the current refresh has gotten through.
+    size_t total; // Rooms the current refresh covers.
 };
 sweep_status get_sweep_status();
 
@@ -49,11 +49,12 @@ struct room_open_times {
     std::string room;     // Room number, e.g. "W41-1119".
     std::string building; // Building on the building graph, e.g. "W41".
     std::optional<int> capacity; // Seats, or std::nullopt if unknown (see mit_rooms.h).
+    time_t fetched_at;    // When the room's bookings were last fetched.
     std::vector<std::pair<time_t, time_t>> open; // (start, end) unix timestamps, sorted.
 };
 
-// Open windows for every room with fresh bookings, from midnight today (ET) to midnight after tomorrow.
-std::vector<room_open_times> open_times(time_t now);
+// Open windows for the given rooms (those with fresh bookings), from midnight today (ET) to midnight after tomorrow.
+std::vector<room_open_times> open_times(time_t now, const std::vector<std::string>& rooms);
 
 // Maps a room number's building ("14N", "W41") onto a building in mit_buildings.h where possible
 // ("14", "W41"). Buildings the graph doesn't know are returned unchanged.

@@ -20,14 +20,24 @@
 
 namespace {
 
-// How often every room's bookings are re-fetched.
-constexpr auto SWEEP_INTERVAL = std::chrono::hours(1);
+// A room's bookings are re-fetched once they're this old. Fetch times are kept in SQLite, so restarting the bot
+// doesn't trigger a refresh, and a refresh interrupted by a restart picks up where it left off.
+constexpr time_t REFRESH_AFTER = 6 * 60 * 60;
 
-// Delay between roomBookings requests, so a sweep trickles out over ~20 minutes rather than hammering classrooms.mit.edu.
+// Delay between roomBookings requests, so a refresh trickles out rather than hammering classrooms.mit.edu.
 constexpr auto REQUEST_INTERVAL = std::chrono::seconds(3);
 
+// After a Touchstone failure, wait this long before trying again (a successful reauth wakes the thread sooner).
+constexpr auto AUTH_RETRY_INTERVAL = std::chrono::hours(1);
+
+// The refresh thread never sleeps longer than this, so it rechecks wall-clock time after the machine sleeps.
+constexpr auto MAX_NAP = std::chrono::minutes(10);
+
+// Refreshed rooms are pushed to wokenet in batches of this many, so progress shows up as a refresh goes.
+constexpr size_t PUSH_BATCH = 25;
+
 // A room whose bookings were fetched longer ago than this is left out rather than trusted.
-constexpr time_t MAX_STALENESS = 6 * 60 * 60;
+constexpr time_t MAX_STALENESS = 24 * 60 * 60;
 
 // Only list rooms whose free window starts within this long from now...
 constexpr time_t LOOKAHEAD = 2 * 60 * 60;
@@ -60,7 +70,7 @@ hydrant_term term;
 std::map<std::string, std::vector<hydrant_meeting>> hydrant_meetings; // Keyed by room number.
 bool refresh_requested = false;
 std::condition_variable wake;
-room_schedule::sweep_status progress{false, 0, mit_rooms::rooms.size()};
+room_schedule::sweep_status progress{false, 0, 0};
 
 // "W41-1119" -> "W41".
 std::string building_of(const std::string& room) {
@@ -184,52 +194,6 @@ std::optional<db::RoomBookings> fetch_room(cpr::Session& s, const std::string& r
     return result;
 }
 
-// Re-fetches every tracked room's bookings, slowly. Gives up at the first Touchstone failure.
-void sweep(sqlite3* database, const std::function<void(const std::string&)>& on_auth_failure, bool& alerted) {
-    std::cout << "[?] Refreshing room bookings for " << mit_rooms::rooms.size() << " rooms...\n";
-    size_t fetched = 0;
-    {
-        std::lock_guard lock(mutex);
-        progress.running = true;
-        progress.done = 0;
-    }
-
-    // One session for the whole sweep keeps the connection alive between requests. It writes the cookie
-    // jar when destroyed, at the end of the sweep.
-    cpr::Session s = libtouchstone::session(config::cookiefile());
-    for (const auto& tracked : mit_rooms::rooms) {
-        const std::string& room = tracked.number;
-        std::string auth_error;
-        auto result = fetch_room(s, room, auth_error);
-
-        if (!auth_error.empty()) {
-            std::cout << "[!] Touchstone auth failed while refreshing room bookings: " << auth_error << "\n";
-            if (!alerted) on_auth_failure(auth_error);
-            alerted = true;
-            std::lock_guard lock(mutex);
-            progress.running = false;
-            return;
-        }
-        alerted = false;
-
-        if (result && database) db::replace_room_bookings(database, room, *result);
-        {
-            std::lock_guard lock(mutex);
-            if (result) bookings[room] = std::move(*result);
-            progress.done++;
-        }
-        fetched += result.has_value();
-        std::this_thread::sleep_for(REQUEST_INTERVAL);
-    }
-
-    {
-        std::lock_guard lock(mutex);
-        progress.running = false;
-    }
-
-    std::cout << "[*] Refreshed room bookings for " << fetched << "/" << mit_rooms::rooms.size() << " rooms.\n";
-}
-
 using interval = std::pair<time_t, time_t>;
 
 // Every gap between `busy` intervals within [from, to).
@@ -264,22 +228,21 @@ std::vector<interval> busy_on_day(const std::string& room, const db::RoomBooking
     return busy;
 }
 
-// POSTs every room's open times to wokenet's Convex backend, if configured.
-void push_open_times() {
-    if (!config::convex_site_url() || !config::classrooms_webhook_secret()) return;
+// POSTs the given rooms' open times to wokenet's Convex backend, if configured. Every push also lists all tracked
+// rooms, so wokenet can drop rooms that were removed from mit_rooms.h.
+void push_open_times(const std::vector<std::string>& rooms) {
+    if (rooms.empty() || !config::convex_site_url() || !config::classrooms_webhook_secret()) return;
 
-    auto rooms = room_schedule::open_times(time(nullptr));
-    if (rooms.empty()) return; // Nothing fresh; leave wokenet's last data (and its timestamps) in place.
-
-    // Shaped like {"classrooms": [{"room": "W41-1119", "building": "W41", "capacity": 25, "open": [{"start": ms, "end": ms}, ...]}, ...]},
-    // with "capacity" left out when unknown.
+    // Shaped like {"classrooms": [{"room": "W41-1119", "building": "W41", "capacity": 25, "updatedAt": ms,
+    // "open": [{"start": ms, "end": ms}, ...]}, ...], "tracked": ["1-131", ...]}, with "capacity" left out when unknown.
     jt::Json body;
     body["classrooms"].setArray();
-    for (const auto& room : rooms) {
+    for (const auto& room : room_schedule::open_times(time(nullptr), rooms)) {
         jt::Json entry;
         entry["room"] = room.room;
         entry["building"] = room.building;
         if (room.capacity) entry["capacity"] = *room.capacity;
+        entry["updatedAt"] = (long long)room.fetched_at * 1000;
         entry["open"].setArray();
         for (const auto& [start, end] : room.open) {
             jt::Json window;
@@ -289,6 +252,8 @@ void push_open_times() {
         }
         body["classrooms"].getArray().push_back(std::move(entry));
     }
+    body["tracked"].setArray();
+    for (const auto& room : mit_rooms::rooms) body["tracked"].getArray().push_back(room.number);
 
     cpr::Response r = cpr::Post(
         cpr::Url{std::string(config::convex_site_url()) + "/ingest-classroom-availability"},
@@ -299,14 +264,94 @@ void push_open_times() {
     if (r.error || r.status_code != 200) {
         std::cout << "[!] Failed to push room open times to wokenet (status " << r.status_code << "): " << (r.error ? r.error.message : r.text) << "\n";
     } else {
-        std::cout << "[*] Pushed open times for " << rooms.size() << " rooms to wokenet.\n";
+        std::cout << "[*] Pushed open times for " << body["classrooms"].getArray().size() << " rooms to wokenet.\n";
     }
+}
+
+// Rooms due for a refresh (oldest data first, never-fetched rooms before all others), and when the next room comes
+// due if none are. A room is due REFRESH_AFTER its last fetch or last failed attempt, whichever is later.
+std::pair<std::vector<std::string>, time_t> rooms_due(time_t now, const std::map<std::string, time_t>& last_attempt) {
+    std::lock_guard lock(mutex);
+    std::vector<std::pair<time_t, std::string>> due;
+    time_t next_due = now + REFRESH_AFTER;
+    for (const auto& room : mit_rooms::rooms) {
+        auto fetched = bookings.find(room.number);
+        auto attempted = last_attempt.find(room.number);
+        time_t fetched_at = fetched == bookings.end() ? 0 : fetched->second.fetched_at;
+        time_t last = std::max(fetched_at, attempted == last_attempt.end() ? 0 : attempted->second);
+        if (now - last >= REFRESH_AFTER) due.push_back({fetched_at, room.number});
+        else next_due = std::min(next_due, last + REFRESH_AFTER);
+    }
+    std::sort(due.begin(), due.end());
+    std::vector<std::string> rooms;
+    for (auto& [_, room] : due) rooms.push_back(std::move(room));
+    return {rooms, next_due};
+}
+
+// Re-fetches the given rooms' bookings, slowly, pushing them to wokenet in batches as it goes. Returns false if it
+// stopped early on a Touchstone failure.
+bool refresh(sqlite3* database, const std::vector<std::string>& rooms, const std::function<void(const std::string&)>& on_auth_failure,
+             bool& alerted, std::map<std::string, time_t>& last_attempt) {
+    std::cout << "[?] Refreshing room bookings for " << rooms.size() << " rooms...\n";
+    size_t fetched = 0;
+    {
+        std::lock_guard lock(mutex);
+        progress = {true, 0, rooms.size()};
+    }
+
+    // One session for the whole refresh keeps the connection alive between requests. It writes the cookie
+    // jar when destroyed, at the end of the refresh.
+    cpr::Session s = libtouchstone::session(config::cookiefile());
+    std::vector<std::string> unpushed;
+    for (const auto& room : rooms) {
+        std::string auth_error;
+        auto result = fetch_room(s, room, auth_error);
+
+        if (!auth_error.empty()) {
+            std::cout << "[!] Touchstone auth failed while refreshing room bookings: " << auth_error << "\n";
+            if (!alerted) on_auth_failure(auth_error);
+            alerted = true;
+            {
+                std::lock_guard lock(mutex);
+                progress.running = false;
+            }
+            push_open_times(unpushed);
+            return false;
+        }
+        alerted = false;
+        // Recorded even on failure, so a room that keeps failing waits REFRESH_AFTER instead of being retried in a loop.
+        last_attempt[room] = time(nullptr);
+
+        if (result && database) db::replace_room_bookings(database, room, *result);
+        {
+            std::lock_guard lock(mutex);
+            if (result) bookings[room] = std::move(*result);
+            progress.done++;
+        }
+        if (result) {
+            fetched++;
+            unpushed.push_back(room);
+        }
+        if (unpushed.size() >= PUSH_BATCH) {
+            push_open_times(unpushed);
+            unpushed.clear();
+        }
+        std::this_thread::sleep_for(REQUEST_INTERVAL);
+    }
+    push_open_times(unpushed);
+
+    {
+        std::lock_guard lock(mutex);
+        progress.running = false;
+    }
+    std::cout << "[*] Refreshed room bookings for " << fetched << "/" << rooms.size() << " rooms.\n";
+    return true;
 }
 
 } // namespace
 
 void room_schedule::start(std::function<void(const std::string&)> on_auth_failure) {
-    // The sweep gets its own connection: sharing one would let its transactions swallow other threads' writes.
+    // The refresh thread gets its own connection: sharing one would let its transactions swallow other threads' writes.
     sqlite3* database = db::init();
     if (database) {
         auto cached = db::get_room_bookings(database);
@@ -321,15 +366,21 @@ void room_schedule::start(std::function<void(const std::string&)> on_auth_failur
     std::thread([database, on_auth_failure = std::move(on_auth_failure)] {
         bool alerted = false; // Whether on_auth_failure was already called for the current failure streak.
         bool hydrant_loaded = false;
+        std::map<std::string, time_t> last_attempt; // Last fetch attempt per room, including failed ones.
         for (;;) {
             if (!hydrant_loaded) hydrant_loaded = load_hydrant();
 
-            auto next_sweep = std::chrono::steady_clock::now() + SWEEP_INTERVAL;
-            sweep(database, on_auth_failure, alerted);
-            push_open_times();
+            time_t now = time(nullptr);
+            auto [due, next_due] = rooms_due(now, last_attempt);
+            std::chrono::seconds nap = std::min<std::chrono::seconds>(MAX_NAP, std::chrono::seconds(next_due - now));
+            if (!due.empty()) {
+                // Recheck right after a finished refresh, in case more rooms came due while it ran.
+                if (refresh(database, due, on_auth_failure, alerted, last_attempt)) continue;
+                nap = AUTH_RETRY_INTERVAL;
+            }
 
             std::unique_lock lock(mutex);
-            wake.wait_until(lock, next_sweep, [] { return refresh_requested; });
+            wake.wait_for(lock, nap, [] { return refresh_requested; });
             refresh_requested = false;
         }
     }).detach();
@@ -371,17 +422,19 @@ std::optional<std::vector<room_schedule::free_room>> room_schedule::find_free_ro
     return rooms;
 }
 
-std::vector<room_schedule::room_open_times> room_schedule::open_times(time_t now) {
+std::vector<room_schedule::room_open_times> room_schedule::open_times(time_t now, const std::vector<std::string>& only) {
     std::lock_guard lock(mutex);
 
+    std::set<std::string> wanted(only.begin(), only.end());
     std::vector<room_open_times> rooms;
     for (const auto& tracked : mit_rooms::rooms) {
         const std::string& room = tracked.number;
+        if (!wanted.count(room)) continue;
         auto it = bookings.find(room);
         if (it == bookings.end() || now - it->second.fetched_at > MAX_STALENESS) continue;
         const auto& fetched = it->second;
 
-        room_open_times entry{room, graph_building(building_of(room)), tracked.capacity, {}};
+        room_open_times entry{room, graph_building(building_of(room)), tracked.capacity, fetched.fetched_at, {}};
         for (int day = 0; day < 2; day++) {
             time_t day_start = utils::at_minute_et(now, 0, day), day_end = utils::at_minute_et(now, 0, day + 1);
             for (const auto& window : free_intervals(busy_on_day(room, fetched, day_start), day_start, day_end)) {
