@@ -236,9 +236,9 @@ std::vector<interval> busy_between(const std::string& room, const db::RoomBookin
 }
 
 // POSTs the given rooms' open times to wokenet's Convex backend, if configured. Every push also lists all tracked
-// rooms, so wokenet can drop rooms that were removed from mit_rooms.h.
+// rooms, so wokenet can drop rooms that were removed from mit_rooms.h (which is all an empty push does).
 void push_open_times(const std::vector<std::string>& rooms) {
-    if (rooms.empty() || !config::convex_site_url() || !config::classrooms_webhook_secret()) return;
+    if (!config::convex_site_url() || !config::classrooms_webhook_secret()) return;
 
     // Shaped like {"classrooms": [{"room": "W41-1119", "building": "W41", "capacity": 25, "updatedAt": ms,
     // "open": [{"start": ms, "end": ms}, ...]}, ...], "tracked": ["1-131", ...]}, with "capacity" left out when unknown.
@@ -322,7 +322,7 @@ bool refresh(sqlite3* database, const std::vector<std::string>& rooms, const std
                 std::lock_guard lock(mutex);
                 progress.running = false;
             }
-            push_open_times(unpushed);
+            if (!unpushed.empty()) push_open_times(unpushed);
             return false;
         }
         alerted = false;
@@ -345,7 +345,7 @@ bool refresh(sqlite3* database, const std::vector<std::string>& rooms, const std
         }
         std::this_thread::sleep_for(REQUEST_INTERVAL);
     }
-    push_open_times(unpushed);
+    if (!unpushed.empty()) push_open_times(unpushed);
 
     {
         std::lock_guard lock(mutex);
@@ -371,6 +371,9 @@ void room_schedule::start(std::function<void(const std::string&)> on_auth_failur
     }
 
     std::thread([database, on_auth_failure = std::move(on_auth_failure)] {
+        // Drops rooms removed from mit_rooms.h from wokenet now, rather than at the next refresh (up to REFRESH_AFTER away).
+        push_open_times({});
+
         bool alerted = false; // Whether on_auth_failure was already called for the current failure streak.
         bool hydrant_loaded = false;
         std::map<std::string, time_t> last_attempt; // Last fetch attempt per room, including failed ones.
