@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <variant>
 #include <mutex>
+#include <cctype>
+#include <cmath>
 
 namespace utils {
 
@@ -18,6 +20,35 @@ inline T get_or(const Variant& v, const T& fallback) {
 inline std::string uppercase(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), ::toupper);
     return s;
+}
+
+// Orders names with their numbers compared as numbers: "W41-202" before "W41-1119".
+inline bool natural_less(const std::string& a, const std::string& b) {
+    size_t i = 0, j = 0;
+    while (i < a.size() && j < b.size()) {
+        if (std::isdigit((unsigned char)a[i]) && std::isdigit((unsigned char)b[j])) {
+            size_t i_end = i, j_end = j;
+            while (i_end < a.size() && std::isdigit((unsigned char)a[i_end])) i_end++;
+            while (j_end < b.size() && std::isdigit((unsigned char)b[j_end])) j_end++;
+            unsigned long long x = std::stoull(a.substr(i, i_end - i)), y = std::stoull(b.substr(j, j_end - j));
+            if (x != y) return x < y;
+            i = i_end;
+            j = j_end;
+        } else {
+            if (a[i] != b[j]) return a[i] < b[j];
+            i++;
+            j++;
+        }
+    }
+    return a.size() - i < b.size() - j;
+}
+
+// "45m" under an hour, otherwise hours to one decimal, e.g. "1.5h" or "28.3h".
+inline std::string format_duration(time_t seconds) {
+    long mins = std::lround(seconds / 60.0);
+    if (mins < 60) return std::to_string(mins) + "m";
+    long tenths = std::lround(mins / 6.0);
+    return std::to_string(tenths / 10) + (tenths % 10 ? "." + std::to_string(tenths % 10) : "") + "h";
 }
 
 // Point the process timezone at ET. Every *_et helper below relies on this. main() calls it before
@@ -43,8 +74,8 @@ inline std::string strftime_et(time_t t, const char* format) {
     return buf;
 }
 
-// Format a unix timestamp as an ET time string ("HH:MM AM/PM").
-inline std::string format_time_et(time_t t) { return strftime_et(t, "%I:%M %p"); }
+// Format a unix timestamp as an ET time string ("4:30 PM").
+inline std::string format_time_et(time_t t) { return strftime_et(t, "%-I:%M %p"); }
 
 // Format a unix timestamp as an ET date string ("YYYY-MM-DD").
 inline std::string date_et(time_t t) { return strftime_et(t, "%Y-%m-%d"); }
@@ -62,6 +93,16 @@ inline time_t at_minute_et(time_t t, int minute, int day_offset = 0) {
     local_tm.tm_sec = 0;
     local_tm.tm_isdst = -1;
     return mktime(&local_tm);
+}
+
+// An ET time like "4:30 PM", or "9:00 AM tomorrow" / "9:00 AM Fri" when it's on a later day than `now`.
+// Midnight counts as the day before.
+inline std::string format_until_et(time_t t, time_t now) {
+    std::string time = t == at_minute_et(t, 0) ? "midnight" : format_time_et(t);
+    time_t day = at_minute_et(t - 1, 0);
+    if (day == at_minute_et(now, 0)) return time;
+    if (day == at_minute_et(now, 0, 1)) return time + " tomorrow";
+    return time + " " + strftime_et(t - 1, "%a");
 }
 
 // Parse a naive ISO 8601 datetime in ET ("2026-09-23T14:00:00") into a unix timestamp.

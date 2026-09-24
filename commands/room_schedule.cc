@@ -213,20 +213,26 @@ std::vector<interval> free_intervals(std::vector<interval> busy, time_t from, ti
     return free;
 }
 
-// A room's busy time on the ET day starting at `day_start`. It's busy whenever either source says so:
-// roomBookings misses some classes (mostly in departmental rooms) that Hydrant knows about. Caller holds `mutex`.
-std::vector<interval> busy_on_day(const std::string& room, const db::RoomBookings& fetched, time_t day_start) {
+// A room's busy time over the ET days from midnight `from` up to midnight `to`. It's busy whenever either source says
+// so: roomBookings misses some classes (mostly in departmental rooms) that Hydrant knows about. Caller holds `mutex`.
+std::vector<interval> busy_between(const std::string& room, const db::RoomBookings& fetched, time_t from, time_t to) {
     std::vector<interval> busy = fetched.bookings;
-    std::string day = utils::date_et(day_start);
-    int weekday = day == term.monday_schedule ? 0 : utils::weekday_et(day_start);
     auto meetings = hydrant_meetings.find(room);
-    if (term.holidays.count(day) || meetings == hydrant_meetings.end()) return busy;
+    if (meetings == hydrant_meetings.end()) return busy;
 
-    for (const auto& meeting : meetings->second) {
-        // Term bounds are checked per meeting, since first_day/last_day start out as the term's.
-        if (meeting.weekday != weekday || day < meeting.first_day || day > meeting.last_day) continue;
-        // Classes only meet on weekdays, so no DST switch (2 AM Sunday) falls between midnight and a meeting.
-        busy.push_back({day_start + meeting.start_minute * 60, day_start + meeting.end_minute * 60});
+    for (int offset = 0;; offset++) {
+        time_t day_start = utils::at_minute_et(from, 0, offset);
+        if (day_start >= to) break;
+        std::string day = utils::date_et(day_start);
+        if (term.holidays.count(day)) continue;
+        int weekday = day == term.monday_schedule ? 0 : utils::weekday_et(day_start);
+
+        for (const auto& meeting : meetings->second) {
+            // Term bounds are checked per meeting, since first_day/last_day start out as the term's.
+            if (meeting.weekday != weekday || day < meeting.first_day || day > meeting.last_day) continue;
+            // Classes only meet on weekdays, so no DST switch (2 AM Sunday) falls between midnight and a meeting.
+            busy.push_back({day_start + meeting.start_minute * 60, day_start + meeting.end_minute * 60});
+        }
     }
     return busy;
 }
@@ -404,26 +410,39 @@ std::optional<std::vector<room_schedule::free_room>> room_schedule::find_free_ro
     std::lock_guard lock(mutex);
 
     time_t midnight = utils::at_minute_et(now, 0);
-    time_t day_end = utils::at_minute_et(now, 0, 1);
-
     std::vector<free_room> rooms;
-    bool any_fresh = false;
-    for (const auto& [room, fetched] : bookings) {
-        // Coverage always ends at a midnight, so a room covering now covers the rest of today.
-        if (now >= covered_until(fetched)) continue;
-        any_fresh = true;
+    bool any_covered = false;
+    for (const auto& tracked : mit_rooms::rooms) {
+        const std::string& room = tracked.number;
+        auto it = bookings.find(room);
+        if (it == bookings.end()) continue;
+        const auto& fetched = it->second;
+        time_t covered = covered_until(fetched);
+        if (now >= covered) continue;
+        any_covered = true;
 
-        // The first window of at least MIN_FREE that starts within LOOKAHEAD of now.
-        for (const auto& [begin, end] : free_intervals(busy_on_day(room, fetched, midnight), now, day_end)) {
+        // The first window of at least MIN_FREE that starts within LOOKAHEAD of now. It can run past midnight, up to
+        // the end of what's been fetched.
+        for (const auto& [begin, end] : free_intervals(busy_between(room, fetched, midnight, covered), now, covered)) {
             if (begin >= now + LOOKAHEAD) break;
             if (end - begin < MIN_FREE) continue;
-            rooms.push_back({room, graph_building(building_of(room)), begin, end, end == day_end});
+            rooms.push_back({room, graph_building(building_of(room)), tracked.capacity, begin, end});
             break;
         }
     }
 
-    if (!any_fresh) return std::nullopt;
+    if (!any_covered) return std::nullopt;
     return rooms;
+}
+
+size_t room_schedule::stale_rooms(time_t now) {
+    std::lock_guard lock(mutex);
+    size_t stale = 0;
+    for (const auto& tracked : mit_rooms::rooms) {
+        auto it = bookings.find(tracked.number);
+        if (it == bookings.end() || now - it->second.fetched_at > STALE_AFTER) stale++;
+    }
+    return stale;
 }
 
 std::vector<room_schedule::room_open_times> room_schedule::open_times(time_t now, const std::vector<std::string>& only) {
@@ -437,18 +456,12 @@ std::vector<room_schedule::room_open_times> room_schedule::open_times(time_t now
         auto it = bookings.find(room);
         if (it == bookings.end()) continue;
         const auto& fetched = it->second;
-        time_t covered = covered_until(fetched);
+        // Days that haven't been fetched are left without open windows.
+        time_t today = utils::at_minute_et(now, 0);
+        time_t to = std::min(covered_until(fetched), utils::at_minute_et(now, 0, 2));
 
         room_open_times entry{room, graph_building(building_of(room)), tracked.capacity, fetched.fetched_at, {}};
-        for (int day = 0; day < 2; day++) {
-            time_t day_start = utils::at_minute_et(now, 0, day), day_end = utils::at_minute_et(now, 0, day + 1);
-            if (day_start >= covered) break; // Not fetched yet, so left without open windows.
-            for (const auto& window : free_intervals(busy_on_day(room, fetched, day_start), day_start, day_end)) {
-                // Join windows that run across midnight.
-                if (!entry.open.empty() && entry.open.back().second == window.first) entry.open.back().second = window.second;
-                else entry.open.push_back(window);
-            }
-        }
+        if (today < to) entry.open = free_intervals(busy_between(room, fetched, today, to), today, to);
         rooms.push_back(std::move(entry));
     }
     return rooms;

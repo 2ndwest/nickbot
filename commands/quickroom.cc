@@ -2,11 +2,19 @@
 #include <algorithm>
 #include "utils.h"
 
-// Rooms whose availability begins more than this far in the future are sorted to the bottom.
+// Rooms whose availability begins more than this far in the future are listed separately, after the rest.
 static constexpr time_t STARTS_LATER_THRESHOLD = 5 * 60;
 
-// Discord message length limit (with some headroom).
-static constexpr size_t MAX_MESSAGE_LENGTH = 1900;
+// Discord's message length limit.
+static constexpr size_t MAX_MESSAGE_LENGTH = 2000;
+
+// Room for the "...and N more" line.
+static constexpr size_t MORE_LINE_LENGTH = 32;
+
+// How long a room stays free, colored like its bar on wokenet: under 30m yellow, under an hour blue, otherwise green.
+static std::string dot(time_t free_for) {
+    return free_for < 30 * 60 ? "🟡" : free_for < 60 * 60 ? "🔵" : "🟢";
+}
 
 std::optional<std::vector<room_schedule::free_room>> commands::find_free_rooms(const dpp::slashcommand_t& event,
                                                                                const std::map<std::string, int>& buildings) {
@@ -15,8 +23,11 @@ std::optional<std::vector<room_schedule::free_room>> commands::find_free_rooms(c
         event.reply("**Room schedules aren't loaded yet.** The bot may have just restarted, or Touchstone may need reauthentication. Try again in a few minutes.");
         return std::nullopt;
     }
+    bool lecture_halls = utils::get_or<bool>(event.get_parameter("lecture_halls"), true);
     rooms->erase(
-        std::remove_if(rooms->begin(), rooms->end(), [&](const room_schedule::free_room& room) { return !buildings.count(room.building); }),
+        std::remove_if(rooms->begin(), rooms->end(), [&](const room_schedule::free_room& room) {
+            return !buildings.count(room.building) || (!lecture_halls && room.lecture_hall());
+        }),
         rooms->end()
     );
     return rooms;
@@ -26,43 +37,57 @@ std::string commands::format_free_rooms(std::vector<room_schedule::free_room> ro
                                         const std::map<std::string, int>& distances) {
     time_t now = time(nullptr);
     auto starts_later = [now](const room_schedule::free_room& room) { return room.begin > now + STARTS_LATER_THRESHOLD; };
-    auto distance = [&](const room_schedule::free_room& room) {
-        auto it = distances.find(room.building);
+    auto distance = [&](const std::string& building) {
+        auto it = distances.find(building);
         return it == distances.end() ? 0 : it->second;
     };
 
-    // Rooms available right now come first (nearest buildings first), then rooms that only open up later.
+    // Rooms free now come first, by building (nearest first) and then room number. Rooms opening up later follow,
+    // soonest first.
     std::sort(rooms.begin(), rooms.end(), [&](const room_schedule::free_room& a, const room_schedule::free_room& b) {
         if (starts_later(a) != starts_later(b)) return !starts_later(a);
         if (starts_later(a) && a.begin != b.begin) return a.begin < b.begin;
-        if (distance(a) != distance(b)) return distance(a) < distance(b);
-        return a.room < b.room;
+        if (distance(a.building) != distance(b.building)) return distance(a.building) < distance(b.building);
+        if (a.building != b.building) return utils::natural_less(a.building, b.building);
+        return utils::natural_less(a.room, b.room);
     });
 
+    std::string footer = "-# Sourced from [MIT room bookings](https://classrooms.mit.edu/classrooms/) and [Hydrant](https://hydrant.mit.edu), "
+        "refreshed every 6 hours. Not every room is unlocked.\n";
+    if (size_t stale = room_schedule::stale_rooms(now)) {
+        footer += "-# ⚠️ " + (stale == 1 ? std::string("1 room hasn't") : std::to_string(stale) + " rooms haven't") +
+            " refreshed in over " + std::to_string(room_schedule::STALE_AFTER / (60 * 60)) + " hours.\n";
+    }
+
+    // Headings only help when rooms could be from more than one building.
+    bool by_building = distances.size() > 1;
     std::string response = header;
+    std::string building; // The building whose heading was listed last.
     bool in_later_section = false;
     size_t shown = 0;
 
     for (const auto& room : rooms) {
+        std::string name = "**" + room.room + "**" + (room.lecture_hall() ? " `LH`" : "");
         std::string line;
-        if (starts_later(room) && !in_later_section) {
-            in_later_section = true;
-            line += "**Opening up later:**\n";
+        if (starts_later(room)) {
+            if (!in_later_section) line += "**Opening up later:**\n";
+            line += dot(room.end - room.begin) + " " + name + " — " + utils::format_until_et(room.begin, now) + " → " + utils::format_until_et(room.end, now) + "\n";
+        } else {
+            if (by_building && room.building != building) line += "**Building " + room.building + "**\n";
+            line += dot(room.end - now) + " " + name + " — until " + utils::format_until_et(room.end, now) + " · " + utils::format_duration(room.end - now) + "\n";
         }
-        line += "├ **" + room.room + "** — " + utils::format_time_et(room.begin) + " → " +
-            (room.until_end_of_day ? "end of day" : utils::format_time_et(room.end)) + "\n";
 
-        if (response.size() + line.size() > MAX_MESSAGE_LENGTH) break;
+        if (response.size() + line.size() + footer.size() + MORE_LINE_LENGTH > MAX_MESSAGE_LENGTH) break;
         response += line;
         shown++;
+        in_later_section = starts_later(room);
+        building = room.building;
     }
 
     if (shown < rooms.size()) {
-        response += "├ *...and " + std::to_string(rooms.size() - shown) + " more*\n";
+        response += "*...and " + std::to_string(rooms.size() - shown) + " more*\n";
     }
-
-    response += "-# Sourced from [MIT room bookings](https://classrooms.mit.edu/classrooms/) and [Hydrant](https://hydrant.mit.edu), refreshed hourly. Not every room is unlocked.\n";
-    return response;
+    return response + footer;
 }
 
 void commands::quickroom(const dpp::slashcommand_t& event) {

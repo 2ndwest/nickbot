@@ -141,6 +141,14 @@ int main() {
                     true
                 )
             );
+            quickroom_cmd.add_option(
+                dpp::command_option(
+                    dpp::co_boolean,
+                    "lecture_halls",
+                    "Include lecture halls (" + std::to_string(room_schedule::LECTURE_HALL_SEATS) + "+ seats). Default true.",
+                    false
+                )
+            );
             bot.global_command_create(quickroom_cmd);
 
             // quicknear command
@@ -164,6 +172,14 @@ int main() {
                     "How many buildings away to search (default 2).",
                     false
                 ).set_min_value(1).set_max_value(5)
+            );
+            quicknear_cmd.add_option(
+                dpp::command_option(
+                    dpp::co_boolean,
+                    "lecture_halls",
+                    "Include lecture halls (" + std::to_string(room_schedule::LECTURE_HALL_SEATS) + "+ seats). Default true.",
+                    false
+                )
             );
             bot.global_command_create(quicknear_cmd);
 

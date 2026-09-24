@@ -15,13 +15,23 @@
 //     missing from roomBookings, so a room counts as busy whenever either source says it is.
 namespace room_schedule {
 
+// Rooms with at least this many seats count as lecture halls, the same line wokenet draws.
+inline constexpr int LECTURE_HALL_SEATS = 60;
+
+// A room not refreshed in this long is flagged as stale, the same as on wokenet. Rooms are normally refreshed every
+// 6 hours, so this means a refresh was missed.
+inline constexpr time_t STALE_AFTER = 8 * 60 * 60;
+
 // A window during which a room has no bookings.
 struct free_room {
-    std::string room;      // Room number, e.g. "W41-1119".
-    std::string building;  // Building on the building graph, e.g. "W41" (or "14" for room "14N-112").
-    time_t begin;          // Start of the free window (unix timestamp).
-    time_t end;            // End of the free window (unix timestamp).
-    bool until_end_of_day; // No more bookings today; `end` is midnight.
+    std::string room;             // Room number, e.g. "W41-1119".
+    std::string building;         // Building on the building graph, e.g. "W41" (or "14" for room "14N-112").
+    std::optional<int> capacity;  // Seats, or std::nullopt if unknown (see mit_rooms.h).
+    time_t begin;                 // Start of the free window (unix timestamp).
+    time_t end;                   // End of the free window (unix timestamp). May be a later day; bookings are only
+                                  // fetched through tomorrow, so it's midnight after tomorrow at the latest.
+
+    bool lecture_hall() const { return capacity.value_or(0) >= LECTURE_HALL_SEATS; }
 };
 
 // Loads cached bookings from the database, then starts a background thread that loads Hydrant and
@@ -43,6 +53,9 @@ sweep_status get_sweep_status();
 // Every room free now or opening up soon, or std::nullopt if no room's fetched bookings cover today
 // (the bot just started with an empty cache, or fetching has been failing for a while).
 std::optional<std::vector<free_room>> find_free_rooms(time_t now);
+
+// How many tracked rooms haven't been refreshed in over STALE_AFTER (including any never fetched).
+size_t stale_rooms(time_t now);
 
 // A room's open (unbooked) windows over today and tomorrow, as pushed to wokenet.
 struct room_open_times {

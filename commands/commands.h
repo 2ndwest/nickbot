@@ -18,14 +18,15 @@ void quickroom(const dpp::slashcommand_t& event);
 void quicknear(const dpp::slashcommand_t& event);
 
 // Every room free now or opening up soon (see room_schedule::find_free_rooms) in one of `buildings`
-// (keyed by graph building). If schedules aren't loaded, replies to the event with an error message
-// and returns std::nullopt.
+// (keyed by graph building), leaving out lecture halls if the event's `lecture_halls` option is false.
+// If schedules aren't loaded, replies to the event with an error message and returns std::nullopt.
 std::optional<std::vector<room_schedule::free_room>> find_free_rooms(const dpp::slashcommand_t& event,
                                                                      const std::map<std::string, int>& buildings);
 
-// Formats rooms into a Discord message. Rooms available right now are listed first (nearest buildings
-// first, by `distances`: building -> graph distance); rooms that only open up more than 5 minutes from
-// now are sorted to the bottom.
+// Formats rooms into a Discord message, like wokenet's classrooms page. Rooms available right now come first,
+// grouped under the building they're in when more than one building was searched (nearest first, by
+// `distances`: building -> graph distance). Rooms that only open up more than 5 minutes from now follow in one
+// list, soonest first.
 std::string format_free_rooms(std::vector<room_schedule::free_room> rooms, const std::string& header,
                               const std::map<std::string, int>& distances = {});
 
