@@ -40,7 +40,7 @@ struct sweep_status {
 };
 sweep_status get_sweep_status();
 
-// Every room free now or opening up soon, or std::nullopt if no recent bookings are available
+// Every room free now or opening up soon, or std::nullopt if no room's fetched bookings cover today
 // (the bot just started with an empty cache, or fetching has been failing for a while).
 std::optional<std::vector<free_room>> find_free_rooms(time_t now);
 
@@ -53,7 +53,8 @@ struct room_open_times {
     std::vector<std::pair<time_t, time_t>> open; // (start, end) unix timestamps, sorted.
 };
 
-// Open windows for the given rooms (those with fresh bookings), from midnight today (ET) to midnight after tomorrow.
+// Open windows for the given rooms, from midnight today (ET) to midnight after tomorrow, but only over days their
+// fetched bookings cover.
 std::vector<room_open_times> open_times(time_t now, const std::vector<std::string>& rooms);
 
 // Maps a room number's building ("14N", "W41") onto a building in mit_buildings.h where possible

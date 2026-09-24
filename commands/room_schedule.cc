@@ -36,9 +36,6 @@ constexpr auto MAX_NAP = std::chrono::minutes(10);
 // Refreshed rooms are pushed to wokenet in batches of this many, so progress shows up as a refresh goes.
 constexpr size_t PUSH_BATCH = 25;
 
-// A room whose bookings were fetched longer ago than this is left out rather than trusted.
-constexpr time_t MAX_STALENESS = 24 * 60 * 60;
-
 // Only list rooms whose free window starts within this long from now...
 constexpr time_t LOOKAHEAD = 2 * 60 * 60;
 
@@ -192,6 +189,12 @@ std::optional<db::RoomBookings> fetch_room(cpr::Session& s, const std::string& r
         return std::nullopt;
     }
     return result;
+}
+
+// A fetch covers the day it ran and the next (see fetch_room). Past this midnight its bookings are unknown, so the room
+// counts as booked rather than free.
+time_t covered_until(const db::RoomBookings& fetched) {
+    return utils::at_minute_et(fetched.fetched_at, 0, 2);
 }
 
 using interval = std::pair<time_t, time_t>;
@@ -406,7 +409,8 @@ std::optional<std::vector<room_schedule::free_room>> room_schedule::find_free_ro
     std::vector<free_room> rooms;
     bool any_fresh = false;
     for (const auto& [room, fetched] : bookings) {
-        if (now - fetched.fetched_at > MAX_STALENESS) continue;
+        // Coverage always ends at a midnight, so a room covering now covers the rest of today.
+        if (now >= covered_until(fetched)) continue;
         any_fresh = true;
 
         // The first window of at least MIN_FREE that starts within LOOKAHEAD of now.
@@ -431,12 +435,14 @@ std::vector<room_schedule::room_open_times> room_schedule::open_times(time_t now
         const std::string& room = tracked.number;
         if (!wanted.count(room)) continue;
         auto it = bookings.find(room);
-        if (it == bookings.end() || now - it->second.fetched_at > MAX_STALENESS) continue;
+        if (it == bookings.end()) continue;
         const auto& fetched = it->second;
+        time_t covered = covered_until(fetched);
 
         room_open_times entry{room, graph_building(building_of(room)), tracked.capacity, fetched.fetched_at, {}};
         for (int day = 0; day < 2; day++) {
             time_t day_start = utils::at_minute_et(now, 0, day), day_end = utils::at_minute_et(now, 0, day + 1);
+            if (day_start >= covered) break; // Not fetched yet, so left without open windows.
             for (const auto& window : free_intervals(busy_on_day(room, fetched, day_start), day_start, day_end)) {
                 // Join windows that run across midnight.
                 if (!entry.open.empty() && entry.open.back().second == window.first) entry.open.back().second = window.second;
