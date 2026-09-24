@@ -26,9 +26,10 @@ std::optional<std::vector<room_schedule::free_room>> find_free_rooms(const dpp::
 // Formats rooms into a Discord message, like wokenet's classrooms page. Rooms available right now come first,
 // grouped under the building they're in when more than one building was searched (nearest first, by
 // `distances`: building -> graph distance). Rooms that only open up more than 5 minutes from now follow in one
-// list, soonest first.
-std::string format_free_rooms(std::vector<room_schedule::free_room> rooms, const std::string& header,
-                              const std::map<std::string, int>& distances = {});
+// list, soonest first. A footer asks for inaccessible rooms to be reported to the admin (mentioned without a ping),
+// and warns when some rooms missed a refresh.
+dpp::message format_free_rooms(std::vector<room_schedule::free_room> rooms, const std::string& header,
+                               const std::map<std::string, int>& distances = {});
 
 // Submits all pending work requests stored in the database. Deletes pending requests from db on success.
 // Returns a pair of (number of successfully submitted requests, initial number of pending requests).

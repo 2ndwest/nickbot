@@ -23,7 +23,7 @@ std::optional<std::vector<room_schedule::free_room>> commands::find_free_rooms(c
         event.reply("**Room schedules aren't loaded yet.** The bot may have just restarted, or Touchstone may need reauthentication. Try again in a few minutes.");
         return std::nullopt;
     }
-    bool lecture_halls = utils::get_or<bool>(event.get_parameter("lecture_halls"), true);
+    bool lecture_halls = utils::get_or<bool>(event.get_parameter("lecture_halls"), false);
     rooms->erase(
         std::remove_if(rooms->begin(), rooms->end(), [&](const room_schedule::free_room& room) {
             return !buildings.count(room.building) || (!lecture_halls && room.lecture_hall());
@@ -33,7 +33,7 @@ std::optional<std::vector<room_schedule::free_room>> commands::find_free_rooms(c
     return rooms;
 }
 
-std::string commands::format_free_rooms(std::vector<room_schedule::free_room> rooms, const std::string& header,
+dpp::message commands::format_free_rooms(std::vector<room_schedule::free_room> rooms, const std::string& header,
                                         const std::map<std::string, int>& distances) {
     time_t now = time(nullptr);
     auto starts_later = [now](const room_schedule::free_room& room) { return room.begin > now + STARTS_LATER_THRESHOLD; };
@@ -52,8 +52,7 @@ std::string commands::format_free_rooms(std::vector<room_schedule::free_room> ro
         return utils::natural_less(a.room, b.room);
     });
 
-    std::string footer = "-# Sourced from [MIT room bookings](https://classrooms.mit.edu/classrooms/) and [Hydrant](https://hydrant.mit.edu), "
-        "refreshed every " + std::to_string(room_schedule::REFRESH_AFTER / (60 * 60)) + " hours. Not every room is unlocked.\n";
+    std::string footer = "-# If you find a room is inaccessible, report it to <@" + std::string(config::admin_user_id()) + ">.\n";
     if (size_t stale = room_schedule::stale_rooms(now)) {
         footer += "-# ⚠️ " + (stale == 1 ? std::string("1 room hasn't") : std::to_string(stale) + " rooms haven't") +
             " refreshed in over " + std::to_string(room_schedule::STALE_AFTER / (60 * 60)) + " hours.\n";
@@ -61,7 +60,7 @@ std::string commands::format_free_rooms(std::vector<room_schedule::free_room> ro
 
     // Headings only help when rooms could be from more than one building.
     bool by_building = distances.size() > 1;
-    std::string response = header;
+    std::string response = header + "\n";
     size_t shown = 0;
 
     for (const auto& room : rooms) {
@@ -69,10 +68,12 @@ std::string commands::format_free_rooms(std::vector<room_schedule::free_room> ro
         std::string name = "**" + room.room + "**" + (room.lecture_hall() ? " `LH`" : "");
         std::string line;
         if (starts_later(room)) {
-            if (!prev || !starts_later(*prev)) line += "**Opening up later:**\n";
+            if (!prev || !starts_later(*prev)) line += std::string(prev ? "\n" : "") + "**Opening up later:**\n";
             line += dot(room.end - room.begin) + " " + name + " — " + utils::format_until_et(room.begin, now) + " → " + utils::format_until_et(room.end, now) + "\n";
         } else {
-            if (by_building && (!prev || prev->building != room.building)) line += "**Building " + room.building + "**\n";
+            if (by_building && (!prev || prev->building != room.building)) {
+                line += std::string(prev ? "\n" : "") + "**Building " + room.building + "**\n";
+            }
             line += dot(room.end - now) + " " + name + " — until " + utils::format_until_et(room.end, now) + " · " + utils::format_duration(room.end - now) + "\n";
         }
 
@@ -82,14 +83,15 @@ std::string commands::format_free_rooms(std::vector<room_schedule::free_room> ro
     }
 
     if (shown < rooms.size()) {
-        response += "*...and " + std::to_string(rooms.size() - shown) + " more*\n";
+        response += "\n*...and " + std::to_string(rooms.size() - shown) + " more*\n";
     }
-    return response + footer;
+    // Mentions the admin without pinging them on every reply.
+    return dpp::message(response + footer).set_allowed_mentions();
 }
 
 void commands::quickroom(const dpp::slashcommand_t& event) {
-    std::string building_query = std::get<std::string>(event.get_parameter("building"));
-    std::string building = room_schedule::graph_building(utils::uppercase(building_query));
+    std::string building_query = utils::uppercase(std::get<std::string>(event.get_parameter("building")));
+    std::string building = room_schedule::graph_building(building_query);
 
     auto rooms = find_free_rooms(event, {{building, 0}});
     if (!rooms) return;

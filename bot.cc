@@ -131,7 +131,7 @@ int main() {
             dpp::command_option lecture_halls_option(
                 dpp::co_boolean,
                 "lecture_halls",
-                "Include lecture halls (" + std::to_string(room_schedule::LECTURE_HALL_SEATS) + "+ seats). Default true.",
+                "Include lecture halls (" + std::to_string(room_schedule::LECTURE_HALL_SEATS) + "+ seats). Default false.",
                 false
             );
 

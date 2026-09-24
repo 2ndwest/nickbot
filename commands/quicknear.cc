@@ -4,8 +4,8 @@
 #include "utils.h"
 
 void commands::quicknear(const dpp::slashcommand_t& event) {
-    std::string building_query = std::get<std::string>(event.get_parameter("building"));
-    std::string building = room_schedule::graph_building(utils::uppercase(building_query));
+    std::string building_query = utils::uppercase(std::get<std::string>(event.get_parameter("building")));
+    std::string building = room_schedule::graph_building(building_query);
     int radius = (int)utils::get_or<int64_t>(event.get_parameter("radius"), 2);
 
     // Map of building -> graph distance from the queried building, for everything within the radius.
