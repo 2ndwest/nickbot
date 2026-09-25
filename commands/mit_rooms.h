@@ -19,10 +19,11 @@ struct room {
 // Tags a capacity as estimated from floor area rather than counted by the registrar.
 inline constexpr bool estimate = true;
 
-// Capacities come from the registrar classroom list (classrooms.mit.edu, Sep 23 2026). Rooms without a registrar
-// count are estimated from MIT space accounting's floor area (floorplans.mit.edu, Sep 22 2026): 20 sq ft per seat,
-// which matches the registrar rooms' median (19.8) and sorts ~90% of them onto the right side of 50 seats, or
-// 13.4 sq ft per seat for rooms space accounting lists as lecture halls (the median for registrar rooms of 100+ seats).
+// Capacities come from the registrar classroom list (classrooms.mit.edu, Sep 23 2026), or were counted in person
+// (W35-108, an Athletics conference room students can use). The rest are estimated from MIT space accounting's floor
+// area (floorplans.mit.edu, Sep 22 2026): 20 sq ft per seat, which matches the registrar rooms' median (19.8) and sorts
+// ~90% of them onto the right side of 50 seats, or 13.4 sq ft per seat for rooms space accounting lists as lecture
+// halls (the median for registrar rooms of 100+ seats).
 // clang-format off
 inline const std::vector<room> rooms = {
     {"1-131", 39, estimate}, {"1-132", 24}, {"1-134", 24}, {"1-135", 35}, {"1-136", 16}, {"1-150", 36},
@@ -70,7 +71,7 @@ inline const std::vector<room> rooms = {
     {"E62-587", 28, estimate}, {"E62-650", 48, estimate}, {"E62-687", 28, estimate}, {"E66-218", 95, estimate},
     {"E66-231", 84, estimate}, {"E66-235", 100, estimate}, {"N51-310", 47, estimate}, {"N51-350", 37, estimate},
     {"NW14-1112", 63, estimate}, {"W18-1102", 253, estimate}, {"W18-1202", 110, estimate}, {"W18-1311", 25, estimate},
-    {"W35-199", 29, estimate}, {"W41-1101", 21, estimate}, {"W41-1119", 14, estimate}, {"W41-1216", 234, estimate},
+    {"W35-108", 2}, {"W35-199", 29, estimate}, {"W41-1101", 21, estimate}, {"W41-1119", 14, estimate}, {"W41-1216", 234, estimate},
     {"W41-1219", 42, estimate}, {"W41-1302", 4, estimate}, {"W41-1303", 15, estimate}, {"W41-1305", 29, estimate},
     {"W41-1306", 91, estimate}, {"W41-1307", 29, estimate}, {"W41-1406", 14, estimate}, {"W41-1408", 12, estimate},
     {"W41-2101", 22, estimate}, {"W41-2302", 25, estimate}, {"W41-2319", 25, estimate}, {"W41-3101", 24, estimate},
