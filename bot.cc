@@ -4,6 +4,7 @@
 #include "commands/commands.h"
 #include "config.h"
 #include "db.h"
+#include "tls.h"
 #include "utils.h"
 
 int main() {
@@ -50,7 +51,7 @@ int main() {
 
             int submitted_reqs = 0, initial_pending_reqs = 0;
             {
-                cpr::Session s = libtouchstone::session(config::cookiefile());
+                cpr::Session s = tls::touchstone_session();
                 cpr::Response r = libtouchstone::authenticate(s,
                     "https://atlas.mit.edu",
                     config::kerb(), config::kerb_password(),

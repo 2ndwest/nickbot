@@ -14,6 +14,7 @@
 #include <libtouchstone.h>
 #include "config.h"
 #include "db.h"
+#include "tls.h"
 #include "utils.h"
 #include "mit_buildings.h"
 #include "mit_rooms.h"
@@ -303,7 +304,7 @@ bool refresh(sqlite3* database, const std::vector<std::string>& rooms, const std
 
     // One session for the whole refresh keeps the connection alive between requests. It writes the cookie
     // jar when destroyed, at the end of the refresh.
-    cpr::Session s = libtouchstone::session(config::cookiefile());
+    cpr::Session s = tls::touchstone_session();
     std::vector<std::string> unpushed;
     for (const auto& room : rooms) {
         std::string auth_error;

@@ -3,6 +3,7 @@
 #include <libtouchstone.h>
 #include <iostream>
 #include "config.h"
+#include "tls.h"
 #include "utils.h"
 
 // Implementation at the end of the file (it's a bit long).
@@ -35,7 +36,7 @@ void commands::workrequest(const dpp::slashcommand_t& event, dpp::cluster& bot, 
 
     event.reply("Submitting work request for room **" + room_number + "**...");
 
-    cpr::Session session = libtouchstone::session(config::cookiefile());
+    cpr::Session session = tls::touchstone_session();
     cpr::Response r = libtouchstone::authenticate(
         session,
         "https://adminappsts.mit.edu/facilities/CreateRequest.action",
